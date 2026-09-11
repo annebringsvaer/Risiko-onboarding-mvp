@@ -1,0 +1,30 @@
+IT-TILGANG OG OPPSETT - RISIKO AS
+
+Denne siden beskriver hvordan du kommer i gang med IT-utstyr, systemer og tilganger som nyansatt.
+
+Utstyr
+Du får utdelt bærbar PC (Mac eller Windows, etter avtale med leder), mobiltelefon ved behov, og skjerm/tastatur/mus dersom du jobber fra kontoret. Utstyret hentes hos IT-support i 3. etasje på Oslo-kontoret, eller sendes i posten dersom du starter på et av de andre kontorene.
+
+Brukerkonto og passord
+Din brukerkonto opprettes av IT-avdelingen før din første arbeidsdag. Brukernavn er fornavn.etternavn@risiko.no. Midlertidig passord sendes til din private e-post og må byttes ved første innlogging. Passord skal være minst 12 tegn og byttes hver 12. måned. Bruk passordhåndtereren Risiko Vault (basert på Bitwarden) til å lagre andre passord - ikke bruk samme passord flere steder.
+
+Tofaktorautentisering (2FA)
+2FA er obligatorisk for alle ansatte og settes opp med Microsoft Authenticator-appen på din telefon. Dette gjelder pålogging til e-post, VPN og alle interne systemer.
+
+VPN og fjernarbeid
+For tilgang til interne systemer utenfor kontoret må du koble deg til VPN via GlobalProtect-klienten som er forhåndsinstallert på PC-en din. Logg inn med din vanlige brukerkonto og 2FA.
+
+E-post og kalender
+Vi bruker Microsoft 365 (Outlook) for e-post og kalender. Du får automatisk tilgang til relevante fellespostkasser og kalendere for ditt team fra IT ved oppstart. Del kalenderen din slik at kolleger kan se din tilgjengelighet.
+
+Programvare og tilganger
+Standard programvarepakke (Office 365, Slack, Zoom, Risiko Vault) installeres automatisk på ny PC. Tilgang til spesifikke systemer (f.eks. produksjonsmiljø, kundedatabase, GitHub) må bestilles av nærmeste leder via tilgangsskjema på intranettet. Behandlingstid for nye tilganger er normalt 1-2 virkedager.
+
+IT-support
+Ved tekniske problemer kontakter du IT-support via Slack-kanalen #it-support, e-post it-support@risiko.no, eller telefon 22 00 00 20. Support er bemannet hverdager 08:00-16:00. Akutte hendelser utenfor arbeidstid meldes til vakttelefon 900 00 000.
+
+Sikkerhet
+Skjermlås skal alltid aktiveres når du forlater PC-en, også på kontoret. Ikke del passord eller 2FA-koder med andre, ikke engang med IT-support. Mistenkelige e-poster (phishing) skal rapporteres via "Report Phishing"-knappen i Outlook eller videresendes til security@risiko.no.
+
+Mistet eller stjålet utstyr
+Meld fra til IT-support umiddelbart (telefon 22 00 00 20 eller vakttelefon 900 00 000 utenfor arbeidstid) slik at utstyret kan fjernstyres eller sperres.

@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="no">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Risiko AS – Onboarding-assistent</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}" />
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+  <div class="app">
+    <header class="app-header">
+      <div class="brand">
+        <div class="brand-logo">R</div>
+        <div class="brand-text">
+          <h1>Risiko AS</h1>
+          <p>Onboarding-assistent for nyansatte</p>
+        </div>
+      </div>
+      <div class="header-badge">Intern MVP · RAG-basert</div>
+    </header>
+
+    <main class="layout">
+      <aside class="sidebar">
+        <h2>Om assistenten</h2>
+        <p>
+          Denne assistenten svarer på spørsmål basert på kunnskapsbasen vår om
+          HMS, IT-oppsett, ferie/fravær, interne verktøy og generell
+          onboarding-informasjon.
+        </p>
+
+        <h2>Prøv disse spørsmålene</h2>
+        <ul class="suggestions" id="suggestions">
+          <li>Hvordan melder jeg fra om sykefravær?</li>
+          <li>Hvordan får jeg tilgang til VPN?</li>
+          <li>Hvor mange feriedager har jeg?</li>
+          <li>Hva gjør jeg hvis det brenner på kontoret?</li>
+          <li>Hvem er fadderen min?</li>
+          <li>Hvilket system bruker vi for oppgavestyring?</li>
+        </ul>
+
+        <h2>Kunnskapsbase</h2>
+        <ul class="kb-list">
+          <li>Velkomstguide</li>
+          <li>HMS-rutiner</li>
+          <li>IT-tilgang og oppsett</li>
+          <li>Ferie- og fraværsregler</li>
+          <li>Interne verktøy</li>
+        </ul>
+
+        <div class="disclaimer">
+          <strong>Merk:</strong> Assistenten kan ta feil. Ved usikre svar bør
+          du alltid dobbeltsjekke med HR eller din leder.
+        </div>
+      </aside>
+
+      <section class="chat-panel">
+        <div class="chat-window" id="chat-window">
+          <div class="message bot">
+            <div class="avatar bot-avatar">AI</div>
+            <div class="bubble-wrap">
+              <div class="bubble">
+                Hei og velkommen til Risiko AS! 👋 Jeg er onboarding-assistenten
+                din. Spør meg om HMS, IT-tilganger, ferie/fravær, interne
+                verktøy eller annet du lurer på som nyansatt.
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <form class="chat-input-row" id="chat-form" autocomplete="off">
+          <input
+            type="text"
+            id="chat-input"
+            placeholder="Skriv spørsmålet ditt her, f.eks. «Hvor mange feriedager har jeg?»"
+            maxlength="1000"
+            required
+          />
+          <button type="submit" id="send-btn">
+            <span>Send</span>
+          </button>
+        </form>
+      </section>
+    </main>
+  </div>
+
+  <script src="{{ url_for('static', filename='script.js') }}"></script>
+</body>
+</html>

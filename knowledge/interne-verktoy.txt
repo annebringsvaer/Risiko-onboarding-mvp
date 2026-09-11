@@ -1,0 +1,33 @@
+INTERNE VERKTØY - RISIKO AS
+
+En oversikt over de viktigste verktøyene og systemene vi bruker i det daglige arbeidet.
+
+Kommunikasjon
+Slack brukes til daglig kommunikasjon internt. Viktige kanaler er #generell (fellesinformasjon), #it-support (teknisk hjelp), #random (sosialt) og teamkanalene for din avdeling. Microsoft Outlook brukes til e-post og kalender. Zoom brukes til videomøter med eksterne, mens interne møter oftest tas i Microsoft Teams.
+
+HR og personal
+Risiko People er vårt HR-system, brukes til å registrere ferie, sykefravær, timeregistrering og personalia. Lønnslipp finner du også her under "Min lønn".
+
+Prosjekt- og oppgavestyring
+Jira brukes til oppgavestyring og sprintplanlegging i utviklingsteamene. Confluence brukes til dokumentasjon av prosjekter og interne rutiner. Andre avdelinger (salg, markedsføring) bruker Asana til oppgavestyring.
+
+Utvikling
+Kildekode ligger i GitHub, under organisasjonen "risiko-as". Vi bruker GitHub Actions for CI/CD. Utviklingsmiljøer kjører på AWS. Tilgang til produksjonsmiljø må godkjennes separat av teamleder og IT-sikkerhet.
+
+Kunde- og salgssystemer
+Salesforce er vårt CRM-system for kundeoppfølging og salg. Support-saker fra kunder håndteres i Zendesk.
+
+Fildeling og samarbeid
+SharePoint/OneDrive brukes til fildeling og lagring av dokumenter. Unngå å lagre arbeidsdokumenter lokalt på PC-en - bruk alltid OneDrive slik at filene sikkerhetskopieres automatisk.
+
+Passordhåndtering
+Risiko Vault (Bitwarden) brukes til å lagre og dele passord sikkert i team. Alle ansatte skal ha egen konto og bruke denne til alle jobbrelaterte passord.
+
+Intranett
+Risiko Intra er vårt intranett, hvor du finner nyheter, HMS-rutiner, avvikssystem, skjemaer og kontaktinformasjon til alle avdelinger.
+
+Opplæring
+Risiko Academy er vår interne læringsplattform (basert på LMS-verktøyet Docebo) med kurs om alt fra produktkunnskap til personvern (GDPR) og informasjonssikkerhet. Alle nyansatte skal fullføre grunnkursene innen første måned.
+
+Tilgang til verktøy
+De fleste verktøy tildeles automatisk basert på avdeling og rolle ved oppstart. Behov for tilgang utover standardpakken bestilles av leder via tilgangsskjema på Risiko Intra. Ved spørsmål om et spesifikt verktøy, kontakt IT-support på Slack (#it-support) eller e-post it-support@risiko.no.
