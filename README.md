@@ -122,29 +122,41 @@ forslagene i sidepanelet), og trykk «Send». Du får:
 
 Eksempler å prøve:
 
-- «Hvor mange feriedager har jeg?»
+- «Hvor mange feriedager har jeg?» → svar fra «Ferie» (30 virkedager) + henvisning til HR
+- «Hva er lønnen min neste år?» → avstår: «lønn» står bare i «Permisjon uten lønn»
 - «Hvordan får jeg tilgang til VPN?»
-- «Hva gjør jeg hvis det brenner på kontoret?»
+- «Hva gjør jeg hvis det brenner på kontoret?» → svar + henvisning til HR (høy konsekvens)
 - «Hvem er fadderen min?»
 - «Hvilket system bruker vi for oppgavestyring?»
+- «Kan jeg jobbe hjemmefra?» → svar fra «VPN og fjernarbeid»
+- «Kan jeg ta med hunden min på kontoret?» → avstår: treffet («Utstyr») handler ikke om «hunden»
 - Noe helt urelatert, f.eks. «Hvor mye koster aksjen deres?» → skal gi usikkerhetsvarsel
 
 ## Confidence-score og usikkerhetsvarsel
 
 Hvert svar får en BM25-relevans-score for det best matchende utdraget i kunnskaps-
-basen. Denne mappes til:
+basen. Hvert spørsmål får også et konsekvensnivå: høy (HMS, rettigheter, lønn,
+permisjon, fravær) eller lav (IT, verktøy, praktisk). Spørsmål med høy konsekvens
+har strengere terskler. Alle terskler og kategorier står som konstanter øverst i
+`rag.py`.
 
-| Nivå            | Terskel (BM25-score) | Vises som                          |
-|-----------------|-----------------------|-------------------------------------|
-| Sikker (high)   | ≥ 6.0                | Grønn badge, svar vises normalt     |
-| Middels (medium)| 3.0 – 6.0             | Gul/oransje badge, svar vises normalt |
-| Usikker (low)   | < 3.0                 | Rød badge + advarselsboks, spørsmålet logges |
+| Nivå            | Lav konsekvens | Høy konsekvens | Håndtering                                          |
+|-----------------|----------------|----------------|-----------------------------------------------------|
+| Sikker (high)   | ≥ 6.0          | ≥ 7.5          | Svar (høy konsekvens: svar + henvisning til HR)     |
+| Middels (medium)| 3.0 – 6.0      | 4.0 – 7.5      | Svar (høy konsekvens: svar + henvisning til HR)     |
+| Usikker (low)   | < 3.0          | < 4.0          | Avstår alltid: «Jeg vet ikke», henviser til HR, logges |
 
-Tersklene er satt empirisk (se `tests/test_rag.py` for testspørsmålene som ble brukt
-til å kalibrere dem), og er bevisst satt litt på den forsiktige siden: det er
-viktigere å faktisk vise brukeren et nyttig svar for typiske onboarding-spørsmål,
-enn å være 100 % presis på å luke bort alle spørsmål utenfor tema. Kildene som
-svaret er basert på vises alltid, slik at brukeren selv kan vurdere relevansen.
+I tillegg gjøres en **dekningssjekk**: minst 60 % (`MIN_DEKNING = 0.6`) av de
+viktigste ordene i spørsmålet (sjeldne eller ukjente ord, f.eks. «hund») må finnes i
+de to beste treffene samlet. Ellers avstår chatboten uansett score. Vanlige ord som
+«arbeidsplassen», «kontoret» og «dager» teller ikke, og et ord som bare står i et
+uttrykk om et annet tema (`ANNET_TEMA_UTTRYKK`, f.eks. «permisjon uten lønn») regnes
+ikke som dekning. Grensene står øverst i `rag.py`.
+
+Kilde og usikkerhetsnivå står alltid i selve svarteksten, også ved høy confidence.
+Tersklene er satt empirisk (se `tests/test_rag.py`). Den strengere terskelen for
+høy konsekvens fanger blant annet at «Når får jeg lønn?» tidligere ble besvart
+med avsnittet «Permisjon uten lønn».
 
 ## Loggføring av usikre spørsmål
 
@@ -154,6 +166,11 @@ Alle spørsmål som får «Usikker»-status logges til `logs/usikre_sporsmal.log
 ```
 2026-09-11T09:31:38+00:00	confidence=0%	spørsmål: Hvor mye koster aksjen deres på børs?
 ```
+
+I tillegg logges *hvert* svar som én JSON-linje i `logs/svarlogg.jsonl`, med
+feltene `kategori`, `konsekvens`, `confidence_pct` og `faktisk_handtering`
+(`svar`, `avstå` eller `henvis`), i samme format som risikodashboardet
+(`risk_dashboard.py` på branchen `risiko_dashboard`).
 
 Tanken er at HR/administrator periodisk kan gå gjennom denne loggen for å se hvilke
 spørsmål ansatte faktisk stiller som chatboten ikke kan svare godt på, og bruke det

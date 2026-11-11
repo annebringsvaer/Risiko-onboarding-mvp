@@ -18,6 +18,107 @@ from dataclasses import dataclass, field
 
 KNOWLEDGE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "knowledge")
 
+# =======================================================================
+# Risikostyring: kategorier, konsekvensnivå og terskler
+# -----------------------------------------------------------------------
+# Disse konstantene styrer når chatboten svarer, når den henviser til HR,
+# og når den avstår fra å svare. Juster dem her.
+# =======================================================================
+
+# Kategorinavn og konsekvens ("hoy"/"lav") følger KATEGORIER i
+# risk_dashboard.py (branch risiko_dashboard), slik at loggen kan brukes
+# direkte i risikodashboardet. Kategorien settes ut fra hvilket dokument
+# det beste søketreffet kommer fra.
+KATEGORIER = {
+    "hms-rutiner.txt": {"navn": "HMS", "konsekvens": "hoy"},
+    "ferie-og-fravaer.txt": {"navn": "Ferie og fravær", "konsekvens": "hoy"},
+    "it-tilgang-oppsett.txt": {"navn": "IT-tilgang", "konsekvens": "lav"},
+    "interne-verktoy.txt": {"navn": "Interne verktøy", "konsekvens": "lav"},
+    "velkomstguide.txt": {"navn": "Generell onboarding", "konsekvens": "lav"},
+}
+UKJENT_KATEGORI = "Ukjent"
+
+# Spørsmål som inneholder ett av disse ordene (også som del av et ord,
+# f.eks. "sykefraværet", "lønnsslipp") regnes alltid som høy konsekvens,
+# uansett hvilket dokument treffet kommer fra: HMS, rettigheter, lønn,
+# permisjon og fravær.
+HOY_KONSEKVENS_NOKKELORD = [
+    # HMS
+    "hms", "brann", "brenn", "evakuer", "rømning", "skade", "ulykke",
+    "avvik", "førstehjelp", "hjertestarter", "verneombud", "varsl",
+    "trakasser", "mobbing", "rusmidl", "arbeidsmiljø",
+    # Rettigheter og arbeidsforhold
+    "rettighet", "arbeidsavtale", "prøvetid", "oppsigelse", "overtid",
+    "pensjon", "forsikring", "tariff",
+    # Lønn
+    "lønn", "feriepenger",
+    # Permisjon og fravær
+    "permisjon", "fravær", "sykemeld", "egenmeld", "sykdom", "syke",
+    "omsorgsdag", "ferie",
+]
+
+# Terskler for BM25-score per konsekvensnivå. Under "lav" avstår chatboten
+# ALLTID fra å svare. Mellom "lav" og "hoy" vises svaret som middels sikkert.
+# Høy konsekvens har strengere terskler: et feil svar om HMS eller
+# rettigheter er mer alvorlig enn et feil svar om hvilket chatteverktøy vi
+# bruker. Tersklene er kalibrert mot spørsmålene i tests/test_rag.py.
+LOW_CONFIDENCE_THRESHOLD = 3.0
+HIGH_CONFIDENCE_THRESHOLD = 6.0
+HOY_KONSEKVENS_LOW_THRESHOLD = 4.0
+HOY_KONSEKVENS_HIGH_THRESHOLD = 7.5
+
+TERSKLER = {
+    "lav": {"lav": LOW_CONFIDENCE_THRESHOLD, "hoy": HIGH_CONFIDENCE_THRESHOLD},
+    "hoy": {"lav": HOY_KONSEKVENS_LOW_THRESHOLD, "hoy": HOY_KONSEKVENS_HIGH_THRESHOLD},
+}
+
+# Faktisk håndtering, samme verdier som i loggen og risikodashboardet.
+HANDTERING_SVAR = "svar"
+HANDTERING_AVSTA = "avstå"
+HANDTERING_HENVIS = "henvis"
+
+HR_KONTAKT = "HR (hr@risiko.no, tlf. 22 00 00 10) eller nærmeste leder"
+
+# Dekningssjekk: de viktigste ordene i spørsmålet må finnes i det beste
+# treffet, ellers avstår chatboten uansett score. Dette stopper svar der
+# treffet bare deler et generelt ord med spørsmålet (f.eks. "Kan jeg ta med
+# hunden min på kontoret?" -> avsnittet "Utstyr", som bare deler "kontor").
+# MIN_DEKNING er andelen viktige ord som må finnes (1.0 = alle).
+# 0.6 betyr: med 1-2 viktige ord må alle finnes, med 3-4 holder det med
+# alle unntatt ett, og med 5 holder det med 3. 0.5 er for lavt: da får
+# "Hva slags bil kjører daglig leder?" svar fra avsnittet "Utvikling",
+# fordi ett av to viktige ord ("kjører") finnes der.
+MIN_DEKNING = 0.6
+# Et ord regnes som viktig hvis det er sjeldent i kunnskapsbasen (IDF minst
+# denne verdien) eller ikke finnes der i det hele tatt. Vanlige ord som
+# "leder" og "system" teller dermed ikke.
+VIKTIG_ORD_MIN_IDF = 1.8
+# Spørreord og generelle verb som aldri regnes som viktige, selv om de er
+# sjeldne eller mangler i kunnskapsbasen.
+GENERISKE_ORD = {
+    "hvis", "når", "hvilket", "hvilken", "hvilke", "slags", "mange", "mye",
+    "lang", "lenge", "får", "lov", "må", "bør", "søker", "søke", "bruke",
+    "bruker", "jobbe", "jobber", "trenger", "finnes", "noen", "skjer",
+    "gjelder", "fungerer", "uten", "være",
+    # Vanlige ord om arbeidshverdagen som ikke sier noe om temaet.
+    "arbeidsplass", "arbeidsplassen", "kontor", "kontoret", "dag", "dager",
+    "dagen",
+}
+# Uttrykk der et ord bare er del av et annet tema. Ordet teller ikke som
+# dekning når det bare står i et slikt uttrykk - f.eks. er avsnittet
+# "Permisjon uten lønn" ikke et svar på "Hva er lønnen min neste år?".
+# Gjelder ikke hvis spørsmålet selv inneholder uttrykket.
+ANNET_TEMA_UTTRYKK = [
+    "uten lønn",
+    "med lønn",
+]
+# Dekningen sjekkes mot de beste treffene samlet - like mange som brukes i
+# svarteksten - ikke bare det første.
+DEKNING_ANTALL_TREFF = 2
+# Et ord regnes også som funnet hvis stammen er minst så lang og er starten
+# på et ord i treffet (f.eks. "bestiller" -> "bestilling").
+MIN_PREFIKS_LENGDE = 5
+
 # Norske + engelske stoppord vi ikke ønsker skal dominere relevans-scoringen.
 STOPWORDS = {
     "og", "i", "jeg", "det", "at", "en", "et", "den", "til", "er", "som",
@@ -69,10 +170,23 @@ _SYNONYMS: dict[str, list[str]] = {
     "syk": ["sykefravær"],
     "sykt": ["sykefravær"],
     "ulykke": ["skade", "avvik"],
+    "hjemmefra": ["fjernarbeid"],
+}
+
+# Utvidelser som bare legges til spørsmålet, ikke dokumentene. Brukes når
+# kunnskapsbasen bruker et annet ord enn den ansatte, eller når ett avsnitt
+# svarer på spørsmålet med et beslektet ord. Hvis de ble lagt til
+# dokumentene også, ville alle avsnitt som nevner "verneombud" fått samme
+# ekstra poeng, i stedet for bare avsnittet som forklarer hvem det er.
+_SPORSMAL_UTVIDELSER: dict[str, list[str]] = {
+    "legeerklæring": ["sykmelding"],
+    "feriedager": ["virkedager"],
+    "verneombud": ["arbeidsmiljøutvalg"],
+    "verneombudet": ["arbeidsmiljøutvalg"],
 }
 
 
-def tokenize(text: str) -> list[str]:
+def tokenize(text: str, sporsmal: bool = False) -> list[str]:
     raw_tokens = [t.lower() for t in TOKEN_RE.findall(text)]
     tokens = []
     for raw in raw_tokens:
@@ -81,6 +195,9 @@ def tokenize(text: str) -> list[str]:
         tokens.append(stem(raw))
         for synonym in _SYNONYMS.get(raw, []):
             tokens.append(stem(synonym))
+        if sporsmal:
+            for synonym in _SPORSMAL_UTVIDELSER.get(raw, []):
+                tokens.append(stem(synonym))
     return tokens
 
 
@@ -230,7 +347,7 @@ class BM25Index:
         return score, max_idf
 
     def search(self, query: str, top_k: int = 4) -> list[tuple[Chunk, float]]:
-        q_tokens = tokenize(query)
+        q_tokens = tokenize(query, sporsmal=True)
         if not q_tokens:
             return []
         q_tf = Counter(q_tokens)
@@ -255,27 +372,26 @@ class BM25Index:
         return scores[:top_k]
 
 
-# --- Confidence-terskler -----------------------------------------------
+# --- Confidence --------------------------------------------------------
 # BM25-score er ubegrenset oppad (typisk 0-10 for korte avsnitt som dette),
 # og avhenger av antall matchende ord og hvor sjeldne/relevante de er.
-# Tersklene under er satt empirisk ved å teste et sett med typiske og
-# utenfor-tema-spørsmål mot kunnskapsbasen (se tests/test_rag.py).
+# Tersklene (se TERSKLER øverst) er satt empirisk ved å teste et sett med
+# typiske og utenfor-tema-spørsmål mot kunnskapsbasen (se tests/test_rag.py).
 #
 # Merk (kjent begrensning): dette er nøkkelordbasert søk uten semantisk
 # forståelse. Spørsmål som tilfeldigvis deler ord med kunnskapsbasen (f.eks.
-# "leder") kan noen ganger få en høyere score enn de fortjener. Vi velger
-# bevisst en lav terskel for "usikker" fremfor en streng en, fordi det er
-# viktigere å ikke overse gode svar enn å være perfekt presis for
-# spørsmål utenfor kunnskapsbasen - kildene vises alltid til brukeren slik
-# at de kan vurdere relevansen selv.
-HIGH_CONFIDENCE_THRESHOLD = 6.0
-LOW_CONFIDENCE_THRESHOLD = 3.0
+# "lønn" i "Permisjon uten lønn") kan få en høyere score enn de fortjener.
+# Derfor er tersklene strengere for spørsmål med høy konsekvens, og kilden
+# vises alltid slik at brukeren kan vurdere relevansen selv.
+
+CONFIDENCE_TEKST = {"high": "Sikker", "medium": "Middels sikker", "low": "Usikker"}
 
 
-def score_to_confidence_label(score: float) -> str:
-    if score >= HIGH_CONFIDENCE_THRESHOLD:
+def score_to_confidence_label(score: float, konsekvens: str = "lav") -> str:
+    terskler = TERSKLER[konsekvens]
+    if score >= terskler["hoy"]:
         return "high"
-    if score >= LOW_CONFIDENCE_THRESHOLD:
+    if score >= terskler["lav"]:
         return "medium"
     return "low"
 
@@ -285,6 +401,24 @@ def score_to_percentage(score: float) -> int:
     # og score >= ca. 10 nærmer seg 99 %. Rent kosmetisk for brukeren.
     pct = min(score / 10.0, 1.0) * 99
     return max(1, round(pct))
+
+
+def er_hoy_konsekvens_sporsmal(question: str) -> bool:
+    tekst = question.lower()
+    return any(ord_ in tekst for ord_ in HOY_KONSEKVENS_NOKKELORD)
+
+
+def klassifiser(question: str, toppkilde: str | None) -> tuple[str, str]:
+    """Returnerer (kategori, konsekvens) for et spørsmål.
+
+    Kategorien kommer fra dokumentet til beste treff. Konsekvensen er høy
+    hvis enten kategorien eller selve spørsmålet tilsier det - ved tvil
+    velges alltid det strengeste nivået."""
+    definisjon = KATEGORIER.get(toppkilde or "")
+    kategori = definisjon["navn"] if definisjon else UKJENT_KATEGORI
+    if (definisjon and definisjon["konsekvens"] == "hoy") or er_hoy_konsekvens_sporsmal(question):
+        return kategori, "hoy"
+    return kategori, "lav"
 
 
 class RagEngine:
@@ -301,27 +435,18 @@ class RagEngine:
         results = self.index.search(question, top_k=top_k)
 
         if not results:
-            return {
-                "answer": (
-                    "Jeg fant ingen relevant informasjon om dette i "
-                    "kunnskapsbasen. Usikker - sjekk med HR."
-                ),
-                "confidence_label": "low",
-                "confidence_pct": 0,
-                "sources": [],
-                "is_uncertain": True,
-            }
+            kategori, konsekvens = klassifiser(question, None)
+            return self._avsta(kategori, konsekvens, 0, None, [])
 
         best_score = results[0][1]
-        confidence_label = score_to_confidence_label(best_score)
+        kategori, konsekvens = klassifiser(question, results[0][0].source)
+        confidence_label = score_to_confidence_label(best_score, konsekvens)
         confidence_pct = score_to_percentage(best_score)
-        is_uncertain = confidence_label == "low"
 
-        # Slå sammen kontekst fra topp-treffene, gruppert per kilde/overskrift,
-        # og bygg et sammensatt svar av de mest relevante utdragene.
+        # Samle kontekst fra topp-treffene, gruppert per kilde/overskrift.
         seen_sources = []
-        answer_parts = []
         sources = []
+        source_chunks = []
         min_score = max(best_score * 0.25, 1.0)
         for chunk, score in results:
             if score < min_score:
@@ -330,6 +455,7 @@ class RagEngine:
             if key in seen_sources:
                 continue
             seen_sources.append(key)
+            source_chunks.append(chunk)
             sources.append(
                 {
                     "title": chunk.title,
@@ -340,27 +466,124 @@ class RagEngine:
                     "excerpt": chunk.text,
                 }
             )
-            answer_parts.append(chunk.text)
 
-        if is_uncertain or not answer_parts:
-            answer_text = (
-                "Jeg er usikker på svaret basert på det jeg har tilgang til. "
-                "Usikker - sjekk med HR eller din nærmeste leder for å være "
-                "sikker på at informasjonen er korrekt og oppdatert."
+        # Under terskelen avstår chatboten alltid - uten å vise utdrag fra
+        # kunnskapsbasen som svar.
+        if confidence_label == "low" or not sources:
+            return self._avsta(kategori, konsekvens, confidence_pct, sources[:1], sources[:3])
+        manglende_ord = self.manglende_viktige_ord(
+            question, source_chunks[:DEKNING_ANTALL_TREFF]
+        )
+        if manglende_ord:
+            return self._avsta(
+                kategori, konsekvens, confidence_pct, sources[:1], sources[:3], manglende_ord
             )
-            if sources:
-                answer_text += f"\n\nDet nærmeste jeg fant var under \"{sources[0]['heading']}\" i {sources[0]['title']}, men treffet er for svakt til at jeg vil stole på det."
+
+        top_source = sources[0]
+        answer_text = top_source["excerpt"]
+        if len(sources) > 1:
+            extra = sources[1]
+            answer_text += f"\n\nI tillegg, under \"{extra['heading']}\" ({extra['title']}): {extra['excerpt']}"
+
+        answer_text += "\n\n" + _kilde_og_usikkerhet(sources[:2], confidence_label, confidence_pct)
+
+        if konsekvens == "hoy":
+            handtering = HANDTERING_HENVIS
+            answer_text += (
+                "\n\nViktig: Dette gjelder HMS eller dine rettigheter. Viktig "
+                f"informasjon bør bekreftes hos {HR_KONTAKT}."
+            )
         else:
-            top_source = sources[0]
-            answer_text = f"{top_source['excerpt']}"
-            if len(sources) > 1:
-                extra = sources[1]
-                answer_text += f"\n\nI tillegg, under \"{extra['heading']}\" ({extra['title']}): {extra['excerpt']}"
+            handtering = HANDTERING_SVAR
 
         return {
             "answer": answer_text,
             "confidence_label": confidence_label,
             "confidence_pct": confidence_pct,
             "sources": sources[:3],
-            "is_uncertain": is_uncertain,
+            "is_uncertain": False,
+            "kategori": kategori,
+            "konsekvens": konsekvens,
+            "faktisk_handtering": handtering,
         }
+
+    def manglende_viktige_ord(self, question: str, chunks: list[Chunk]) -> list[str]:
+        """Returnerer de viktige ordene i spørsmålet som ikke finnes i noen av
+        chunkene, hvis dekningen er under MIN_DEKNING. Ellers en tom liste."""
+        sporsmal_lower = question.lower()
+        uttrykk = [u for u in ANNET_TEMA_UTTRYKK if u not in sporsmal_lower]
+        chunk_tokens = set()
+        for chunk in chunks:
+            tekst = f"{chunk.heading}\n{chunk.text}".lower()
+            for u in uttrykk:
+                tekst = tekst.replace(u, " ")
+            chunk_tokens.update(tokenize(tekst))
+        viktige: dict[str, bool] = {}
+        for raw in TOKEN_RE.findall(question):
+            word = raw.lower()
+            if word in STOPWORDS or word in GENERISKE_ORD or len(word) <= 1 or word in viktige:
+                continue
+            gruppe = {stem(word)} | {
+                stem(s) for s in _SYNONYMS.get(word, []) + _SPORSMAL_UTVIDELSER.get(word, [])
+            }
+            # Ukjente ord (finnes ikke i kunnskapsbasen) er alltid viktige.
+            idf = max(self.index.idf.get(t, math.inf) for t in gruppe)
+            if idf < VIKTIG_ORD_MIN_IDF:
+                continue
+            viktige[word] = any(
+                t in chunk_tokens
+                or (len(t) >= MIN_PREFIKS_LENGDE and any(c.startswith(t) for c in chunk_tokens))
+                for t in gruppe
+            )
+
+        if not viktige:
+            return []
+        dekning = sum(viktige.values()) / len(viktige)
+        if dekning >= MIN_DEKNING:
+            return []
+        return [word for word, funnet in viktige.items() if not funnet]
+
+    def _avsta(
+        self, kategori, konsekvens, confidence_pct, naermeste, sources, manglende_ord=None
+    ) -> dict:
+        answer_text = (
+            "Jeg vet ikke svaret på dette. Jeg fant ikke god nok informasjon i "
+            "kunnskapsbasen til å gi et pålitelig svar, så jeg avstår heller "
+            f"enn å gjette. Ta kontakt med {HR_KONTAKT}."
+        )
+        if naermeste and manglende_ord:
+            ord_tekst = ", ".join(f"«{w}»" for w in manglende_ord)
+            answer_text += (
+                f"\n\nKilde: ingen pålitelig kilde funnet. Nærmeste treff var "
+                f"«{naermeste[0]['heading']}» i {naermeste[0]['title']}, men "
+                f"det handler ikke om {ord_tekst}."
+            )
+        elif naermeste:
+            answer_text += (
+                f"\n\nKilde: ingen pålitelig kilde funnet. Nærmeste treff var "
+                f"«{naermeste[0]['heading']}» i {naermeste[0]['title']}, men "
+                "treffet er for svakt til at jeg vil stole på det."
+            )
+        else:
+            answer_text += "\n\nKilde: ingen relevant kilde funnet i kunnskapsbasen."
+        answer_text += f"\nUsikkerhet: Usikker ({confidence_pct} % confidence)."
+        return {
+            "answer": answer_text,
+            "confidence_label": "low",
+            "confidence_pct": confidence_pct,
+            "sources": sources,
+            "is_uncertain": True,
+            "kategori": kategori,
+            "konsekvens": konsekvens,
+            "faktisk_handtering": HANDTERING_AVSTA,
+            "manglende_ord": manglende_ord or [],
+        }
+
+
+def _kilde_og_usikkerhet(sources: list[dict], confidence_label: str, confidence_pct: int) -> str:
+    kilder = "; ".join(f"{s['title']} – «{s['heading']}»" for s in sources)
+    return (
+        f"Kilde: {kilder}.\n"
+        f"Usikkerhet: {CONFIDENCE_TEKST[confidence_label]} ({confidence_pct} % confidence). "
+        "Confidence sier hvor godt spørsmålet matcher kunnskapsbasen, ikke om svaret er riktig."
+    )

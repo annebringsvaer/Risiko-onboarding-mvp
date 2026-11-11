@@ -15,20 +15,55 @@ Chatboten er ikke et mål i seg selv, men et demonstrasjonsobjekt. Formålet er 
 1. **Risikoen** ved KI-assistenter som gir feilinformasjon til nyansatte – f.eks.
    feil om HMS-rutiner, sykefravær, ferierettigheter eller tilgangsrutiner – og
    hvilke konsekvenser det kan få for den ansatte og virksomheten.
-2. **Risikoreduserende tiltak** som kan bygges inn i en slik assistent:
+2. **Risikoreduserende tiltak** som er bygget inn i assistenten. Alle kategorier
+   og terskler ligger som konstanter øverst i `rag.py`:
+   - **Konsekvensbasert inndeling:** hvert spørsmål får en kategori (fra dokumentet
+     til beste treff, se `KATEGORIER`) og et konsekvensnivå. Høy konsekvens (`hoy`)
+     gjelder HMS, rettigheter, lønn, permisjon og fravær. Lav konsekvens (`lav`)
+     gjelder IT, verktøy og praktisk informasjon. Et spørsmål regnes også som høy
+     konsekvens hvis det inneholder et ord i `HOY_KONSEKVENS_NOKKELORD`. Ved tvil
+     velges alltid det strengeste nivået.
    - **Konfidensterskel:** hvert svar får en confidence-score (BM25-basert) som
-     klassifiseres som Sikker / Middels sikker / Usikker
-     (`HIGH_CONFIDENCE_THRESHOLD` og `LOW_CONFIDENCE_THRESHOLD` i `rag.py`).
-   - **Avstå fra å svare:** under laveste terskel gir chatboten ikke et svar, men
-     en tydelig advarsel («Usikker – sjekk med HR»), og spørsmålet logges til
-     `logs/usikre_sporsmal.log` for oppfølging.
-   - **Kildehenvisning:** hvert svar viser hvilke filer/avsnitt i kunnskapsbasen
-     det bygger på, med relevans-prosent, slik at brukeren kan verifisere.
-   - **Henvisning til HR for høykonsekvens-spørsmål:** spørsmål om f.eks. HMS og
-     ansattes rettigheter (ferie, fravær, lønn, arbeidsavtale) har høy konsekvens
-     ved feil svar og skal henvise brukeren til HR/nærmeste leder. Per nå skjer
-     HR-henvisning kun ved lav confidence; en egen regel for høykonsekvens-temaer
-     uavhengig av confidence er et naturlig neste tiltak.
+     klassifiseres som Sikker / Middels sikker / Usikker. Tersklene står i
+     `TERSKLER`. Høy konsekvens har strengere terskler
+     (`HOY_KONSEKVENS_LOW_THRESHOLD`, `HOY_KONSEKVENS_HIGH_THRESHOLD`) enn lav
+     (`LOW_CONFIDENCE_THRESHOLD`, `HIGH_CONFIDENCE_THRESHOLD`).
+   - **Avstå fra å svare:** under laveste terskel avstår chatboten *alltid*. Den
+     sier at den ikke vet og henviser til HR, uten å vise utdrag fra
+     kunnskapsbasen som svar.
+   - **Dekningssjekk:** de viktigste ordene i spørsmålet må finnes i de beste
+     treffene samlet (like mange som brukes i svaret, `DEKNING_ANTALL_TREFF`).
+     Andelen styres av `MIN_DEKNING` (0.6), og de øvrige grensene av
+     `VIKTIG_ORD_MIN_IDF`, `GENERISKE_ORD` og `MIN_PREFIKS_LENGDE`. Er dekningen for
+     lav, avstår chatboten *uansett score* og sier hvilke ord treffet ikke handler om.
+     Vanlige ord som «arbeidsplassen», «kontoret» og «dager» er generiske og teller
+     ikke. Et ord som bare står i et uttrykk om et annet tema (`ANNET_TEMA_UTTRYKK`,
+     f.eks. «uten lønn») regnes ikke som dekning, med mindre spørsmålet selv
+     inneholder uttrykket. Dette fjerner feilene fra sprint 2, der f.eks. «Kan jeg ta med hunden min
+     på kontoret?» ble besvart med avsnittet «Utstyr».
+   - **Synonymer:** `_SYNONYMS` brukes på både spørsmål og dokumenter (f.eks.
+     «hjemmefra» → «fjernarbeid»). `_SPORSMAL_UTVIDELSER` brukes bare på spørsmålet,
+     når kunnskapsbasen bruker et annet ord (f.eks. «legeerklæring» → «sykmelding»,
+     «feriedager» → «virkedager»).
+   - **Henvisning til HR:** svar på spørsmål med høy konsekvens avsluttes alltid
+     med at viktig informasjon bør bekreftes hos HR eller nærmeste leder.
+   - **Kildehenvisning og usikkerhet:** hvert svar, også ved høy confidence,
+     oppgir kilde (dokument og avsnitt) og usikkerhetsnivå i selve svarteksten.
+     Kildelisten vises i tillegg alltid i chat-UI-et.
+   - **Logging:** hvert svar logges som én JSON-linje i `logs/svarlogg.jsonl`
+     med feltene `tidspunkt`, `sporsmal`, `kategori`, `konsekvens` (`hoy`/`lav`),
+     `confidence_pct` og `faktisk_handtering` (`svar`, `avstå` eller `henvis`).
+     Formatet følger `risk_dashboard.py` på branchen `risiko_dashboard`. Spørsmål
+     der chatboten avstår, logges i tillegg til `logs/usikre_sporsmal.log`.
+
+   Faktisk håndtering:
+
+   | Situasjon                                   | `faktisk_handtering` |
+   |---------------------------------------------|----------------------|
+   | Score under terskelen for konsekvensnivået  | `avstå`              |
+   | Viktige ord i spørsmålet mangler i treffet  | `avstå`              |
+   | Over terskelen, høy konsekvens              | `henvis`             |
+   | Over terskelen, lav konsekvens              | `svar`               |
 
 Svarene er **ekstraktive** (hentet direkte fra kunnskapsbasen), ikke generert av en
 språkmodell. Dette er et bevisst risikoreduserende valg for å unngå hallusinering.
@@ -44,8 +79,8 @@ advarsler/kildehenvisninger uten en begrunnelse.
 .
 ├── CLAUDE.md                   # Denne filen
 ├── README.md                   # Utfyllende dokumentasjon (arkitektur, terskler, begrensninger)
-├── app.py                      # Flask-app: nettside, /api/chat, /api/health, logging av usikre spørsmål
-├── rag.py                      # RAG-motor: chunking, norsk lett-stemming, BM25-søk, confidence, svarbygging
+├── app.py                      # Flask-app: nettside, /api/chat, /api/health, logging av svar
+├── rag.py                      # RAG-motor: kategorier/terskler (øverst), BM25-søk, confidence, svarbygging
 ├── requirements.txt            # Avhengigheter (kun Flask)
 ├── knowledge/                  # Kunnskapsbasen – eneste kilde til svar (fiktivt innhold)
 │   ├── velkomstguide.txt
@@ -57,11 +92,12 @@ advarsler/kildehenvisninger uten en begrunnelse.
 │   └── index.html              # Chat-UI
 ├── static/
 │   ├── style.css
-│   └── script.js               # Frontend: sender spørsmål, viser svar, badge, advarsel og kilder
+│   └── script.js               # Frontend: svar, confidence- og konsekvens-badge, varsel og kilder
 ├── logs/
-│   └── usikre_sporsmal.log     # Opprettes automatisk; ignoreres av git
+│   ├── svarlogg.jsonl          # Alle svar (kategori, konsekvens, håndtering); ignoreres av git
+│   └── usikre_sporsmal.log     # Spørsmål chatboten avsto fra; ignoreres av git
 └── tests/
-    └── test_rag.py             # Tester for besvarbare og ubesvarbare spørsmål
+    └── test_rag.py             # Tester for svar, avstå, konsekvensregel, kilder og logging
 ```
 
 ## Kjøre appen lokalt på Windows
@@ -102,9 +138,20 @@ python tests\test_rag.py
 python -m pytest tests
 ```
 
-Kjør testene etter endringer i `rag.py`, tersklene eller kunnskapsbasen. Nye
-spørsmål som skal besvares eller avvises, legges til i `ANSWERABLE_CASES` /
-`UNANSWERABLE_CASES` i `tests/test_rag.py`.
+Kjør testene etter endringer i `rag.py`, tersklene, kategoriene eller
+kunnskapsbasen. Testspørsmål legges til i `tests/test_rag.py`:
+
+- `ANSWERABLE_CASES`: skal besvares med riktig innhold.
+- `UNANSWERABLE_CASES`: utenfor tema, skal avvises.
+- `HOY_KONSEKVENS_AVSTA_CASES`: høy konsekvens med svakt treff, skal gi `avstå`.
+- `HANDTERING_CASES`: forventet kategori, konsekvens og håndtering.
+- `DEKNING_AVSTA_CASES`: høy nok score, men viktige ord mangler i treffet. Skal gi
+  `avstå`.
+- `DEKNING_BALANSE_CASES`: spørsmål som skal få svar og spørsmål som skal avstå.
+  Brukes for å sjekke at dekningssjekken verken er for streng eller for slapp.
+
+Spørsmålene i sidepanelet (`templates/index.html`) testes også. Ingen av dem skal
+gi `avstå`, slik at demoen ikke starter med at chatboten avstår.
 
 ## Arbeidsflyt: branch og pull request
 
