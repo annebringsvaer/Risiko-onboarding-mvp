@@ -2,6 +2,12 @@
 
 Veiledning for Claude Code (og andre bidragsytere) som jobber i dette repoet.
 
+## FROSSET LOGIKK (fra 11.11.2026, versjon v1.0-frys)
+
+Ikke endre terskler, kategorier, MIN_DEKNING, synonymer eller dekningssjekk i
+rag.py uten at det er eksplisitt bedt om og avtalt med Anne. Testresultatene i
+rapporten bygger på denne versjonen.
+
 ## Om prosjektet
 
 En RAG-basert (Retrieval-Augmented Generation) onboarding-chatbot for den fiktive
