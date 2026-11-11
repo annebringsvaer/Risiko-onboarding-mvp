@@ -23,6 +23,8 @@ engine = RagEngine()
 
 # (spørsmål, tekst som bør forekomme i svaret, forventet minimum confidence-nivå)
 ANSWERABLE_CASES = [
+    # Skal treffe avsnittet "Ferie", ikke "Feriepenger".
+    ("Hvor mange feriedager har jeg?", "30 virkedager", "medium"),
     ("Hvordan melder jeg fra om sykefravær?", "leder", "medium"),
     ("Hvordan får jeg tilgang til VPN?", "GlobalProtect", "medium"),
     ("Hva gjør jeg hvis det brenner på kontoret?", "rømningsvei", "medium"),
@@ -42,9 +44,7 @@ UNANSWERABLE_CASES = [
 # Høy konsekvens-spørsmål der beste treff er for svakt for den strengere
 # terskelen. Her skal chatboten avstå. "Når får jeg lønn?" ga tidligere et
 # svar fra avsnittet "Permisjon uten lønn" - feilinformasjon.
-# "Hvor mange feriedager har jeg?" har "Feriepenger" som beste treff.
 HOY_KONSEKVENS_AVSTA_CASES = [
-    "Hvor mange feriedager har jeg?",
     "Når får jeg lønn?",
     "Hvor mye lønn får jeg?",
     "Hva er rutinen for førstehjelp?",
@@ -153,6 +153,8 @@ DEKNING_BALANSE_CASES = [
     ("Kan jeg ta med hunden min på kontoret?", "avstå", None),
     ("Når får jeg lønn?", "avstå", None),
     ("Hva slags bil kjører daglig leder?", "avstå", None),
+    # Test 2 fra sprint 2: "lønn" står bare i "Permisjon uten lønn".
+    ("Hva er lønnen min neste år?", "avstå", None),
 ]
 
 
@@ -167,6 +169,22 @@ def test_coverage_check_balance():
                 f"forventet {handtering} fra {heading!r}"
             )
     assert not failures, "Feil håndtering:\n" + "\n".join(failures)
+
+
+def test_word_in_other_topic_phrase_is_not_coverage():
+    result = engine.answer("Hva er lønnen min neste år?")
+    assert result["faktisk_handtering"] == "avstå"
+    assert "lønnen" in result["manglende_ord"]
+    # Unntak: spørsmålet handler selv om permisjon uten lønn.
+    result = engine.answer("Hvordan søker jeg permisjon uten lønn?")
+    assert result["faktisk_handtering"] == "henvis"
+    assert result["sources"][0]["heading"] == "Permisjon uten lønn"
+
+
+def test_vacation_days_hits_ferie_section():
+    result = engine.answer("Hvor mange feriedager har jeg?")
+    assert result["faktisk_handtering"] == "henvis"
+    assert result["sources"][0]["heading"] == "Ferie"
 
 
 def test_sick_leave_answer_mentions_egenmelding():
@@ -283,6 +301,8 @@ if __name__ == "__main__":
         test_always_abstains_below_threshold,
         test_high_consequence_abstains_with_stricter_threshold,
         test_coverage_check_balance,
+        test_word_in_other_topic_phrase_is_not_coverage,
+        test_vacation_days_hits_ferie_section,
         test_sick_leave_answer_mentions_egenmelding,
         test_coverage_check_abstains_regardless_of_score,
         test_hjemmefra_hits_vpn_and_remote_work,

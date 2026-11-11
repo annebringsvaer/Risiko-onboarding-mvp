@@ -104,6 +104,14 @@ GENERISKE_ORD = {
     "arbeidsplass", "arbeidsplassen", "kontor", "kontoret", "dag", "dager",
     "dagen",
 }
+# Uttrykk der et ord bare er del av et annet tema. Ordet teller ikke som
+# dekning når det bare står i et slikt uttrykk - f.eks. er avsnittet
+# "Permisjon uten lønn" ikke et svar på "Hva er lønnen min neste år?".
+# Gjelder ikke hvis spørsmålet selv inneholder uttrykket.
+ANNET_TEMA_UTTRYKK = [
+    "uten lønn",
+    "med lønn",
+]
 # Dekningen sjekkes mot de beste treffene samlet - like mange som brukes i
 # svarteksten - ikke bare det første.
 DEKNING_ANTALL_TREFF = 2
@@ -172,6 +180,7 @@ _SYNONYMS: dict[str, list[str]] = {
 # ekstra poeng, i stedet for bare avsnittet som forklarer hvem det er.
 _SPORSMAL_UTVIDELSER: dict[str, list[str]] = {
     "legeerklæring": ["sykmelding"],
+    "feriedager": ["virkedager"],
     "verneombud": ["arbeidsmiljøutvalg"],
     "verneombudet": ["arbeidsmiljøutvalg"],
 }
@@ -501,7 +510,14 @@ class RagEngine:
     def manglende_viktige_ord(self, question: str, chunks: list[Chunk]) -> list[str]:
         """Returnerer de viktige ordene i spørsmålet som ikke finnes i noen av
         chunkene, hvis dekningen er under MIN_DEKNING. Ellers en tom liste."""
-        chunk_tokens = {t for chunk in chunks for t in chunk.tokens}
+        sporsmal_lower = question.lower()
+        uttrykk = [u for u in ANNET_TEMA_UTTRYKK if u not in sporsmal_lower]
+        chunk_tokens = set()
+        for chunk in chunks:
+            tekst = f"{chunk.heading}\n{chunk.text}".lower()
+            for u in uttrykk:
+                tekst = tekst.replace(u, " ")
+            chunk_tokens.update(tokenize(tekst))
         viktige: dict[str, bool] = {}
         for raw in TOKEN_RE.findall(question):
             word = raw.lower()

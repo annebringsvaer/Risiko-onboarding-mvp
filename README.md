@@ -122,7 +122,8 @@ forslagene i sidepanelet), og trykk «Send». Du får:
 
 Eksempler å prøve:
 
-- «Hvor mange feriedager har jeg?» → avstår: høy konsekvens, og beste treff («Feriepenger») er for svakt
+- «Hvor mange feriedager har jeg?» → svar fra «Ferie» (30 virkedager) + henvisning til HR
+- «Hva er lønnen min neste år?» → avstår: «lønn» står bare i «Permisjon uten lønn»
 - «Hvordan får jeg tilgang til VPN?»
 - «Hva gjør jeg hvis det brenner på kontoret?» → svar + henvisning til HR (høy konsekvens)
 - «Hvem er fadderen min?»
@@ -148,7 +149,9 @@ har strengere terskler. Alle terskler og kategorier står som konstanter øverst
 I tillegg gjøres en **dekningssjekk**: minst 60 % (`MIN_DEKNING = 0.6`) av de
 viktigste ordene i spørsmålet (sjeldne eller ukjente ord, f.eks. «hund») må finnes i
 de to beste treffene samlet. Ellers avstår chatboten uansett score. Vanlige ord som
-«arbeidsplassen», «kontoret» og «dager» teller ikke. Grensene står øverst i `rag.py`.
+«arbeidsplassen», «kontoret» og «dager» teller ikke, og et ord som bare står i et
+uttrykk om et annet tema (`ANNET_TEMA_UTTRYKK`, f.eks. «permisjon uten lønn») regnes
+ikke som dekning. Grensene står øverst i `rag.py`.
 
 Kilde og usikkerhetsnivå står alltid i selve svarteksten, også ved høy confidence.
 Tersklene er satt empirisk (se `tests/test_rag.py`). Den strengere terskelen for

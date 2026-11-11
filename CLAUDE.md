@@ -37,11 +37,14 @@ Chatboten er ikke et mål i seg selv, men et demonstrasjonsobjekt. Formålet er 
      `VIKTIG_ORD_MIN_IDF`, `GENERISKE_ORD` og `MIN_PREFIKS_LENGDE`. Er dekningen for
      lav, avstår chatboten *uansett score* og sier hvilke ord treffet ikke handler om.
      Vanlige ord som «arbeidsplassen», «kontoret» og «dager» er generiske og teller
-     ikke. Dette fjerner feilene fra sprint 2, der f.eks. «Kan jeg ta med hunden min
+     ikke. Et ord som bare står i et uttrykk om et annet tema (`ANNET_TEMA_UTTRYKK`,
+     f.eks. «uten lønn») regnes ikke som dekning, med mindre spørsmålet selv
+     inneholder uttrykket. Dette fjerner feilene fra sprint 2, der f.eks. «Kan jeg ta med hunden min
      på kontoret?» ble besvart med avsnittet «Utstyr».
    - **Synonymer:** `_SYNONYMS` brukes på både spørsmål og dokumenter (f.eks.
      «hjemmefra» → «fjernarbeid»). `_SPORSMAL_UTVIDELSER` brukes bare på spørsmålet,
-     når kunnskapsbasen bruker et annet ord (f.eks. «legeerklæring» → «sykmelding»).
+     når kunnskapsbasen bruker et annet ord (f.eks. «legeerklæring» → «sykmelding»,
+     «feriedager» → «virkedager»).
    - **Henvisning til HR:** svar på spørsmål med høy konsekvens avsluttes alltid
      med at viktig informasjon bør bekreftes hos HR eller nærmeste leder.
    - **Kildehenvisning og usikkerhet:** hvert svar, også ved høy confidence,
