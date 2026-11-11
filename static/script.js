@@ -61,18 +61,31 @@ function addBotMessage(data) {
   const label = CONFIDENCE_LABELS[data.confidence_label] || "Ukjent";
   const pct = data.confidence_pct ?? 0;
 
-  let uncertainBannerHtml = "";
-  if (data.is_uncertain) {
-    uncertainBannerHtml = `
+  const consequenceHtml =
+    data.konsekvens === "hoy"
+      ? `<span class="consequence-badge hoy">Høy konsekvens · ${escapeHtml(data.kategori)}</span>`
+      : `<span class="consequence-badge lav">Lav konsekvens · ${escapeHtml(data.kategori)}</span>`;
+
+  let bannerHtml = "";
+  if (data.faktisk_handtering === "avstå") {
+    bannerHtml = `
       <div class="uncertain-banner">
-        ⚠️ Usikker – sjekk med HR. Jeg fant ikke god nok kontekst i
-        kunnskapsbasen til å svare sikkert på dette. Spørsmålet er logget
-        slik at kunnskapsbasen kan forbedres.
+        ⚠️ Jeg vet ikke – sjekk med HR. Jeg fant ikke god nok kontekst i
+        kunnskapsbasen til å svare sikkert på dette, og avstår derfor fra å
+        svare. Spørsmålet er logget slik at kunnskapsbasen kan forbedres.
+      </div>
+    `;
+  } else if (data.faktisk_handtering === "henvis") {
+    bannerHtml = `
+      <div class="referral-banner">
+        ☎️ Høy konsekvens: Viktig informasjon bør bekreftes hos HR eller
+        nærmeste leder før du handler på den.
       </div>
     `;
   }
 
-  let sourcesHtml = "";
+  // Kilder vises alltid, også ved høy confidence.
+  let sourcesHtml;
   if (data.sources && data.sources.length > 0) {
     const items = data.sources
       .map(
@@ -84,12 +97,17 @@ function addBotMessage(data) {
         </div>`
       )
       .join("");
+    const summary = data.is_uncertain
+      ? `Nærmeste treff – for svake til å brukes (${data.sources.length})`
+      : `Kilder brukt i svaret (${data.sources.length})`;
     sourcesHtml = `
-      <details class="sources">
-        <summary>Kilder brukt i svaret (${data.sources.length})</summary>
+      <details class="sources" open>
+        <summary>${summary}</summary>
         <div class="sources-content">${items}</div>
       </details>
     `;
+  } else {
+    sourcesHtml = `<div class="sources">Ingen relevant kilde funnet i kunnskapsbasen.</div>`;
   }
 
   el.innerHTML = `
@@ -100,8 +118,9 @@ function addBotMessage(data) {
         <span class="confidence-badge ${data.confidence_label}">
           ${label} · ${pct}% confidence
         </span>
+        ${consequenceHtml}
       </div>
-      ${uncertainBannerHtml}
+      ${bannerHtml}
       ${sourcesHtml}
     </div>
   `;

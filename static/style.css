@@ -321,6 +321,37 @@ body {
   font-weight: 500;
 }
 
+.consequence-badge {
+  display: inline-flex;
+  align-items: center;
+  font-size: 11.5px;
+  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid currentColor;
+}
+
+.consequence-badge.hoy {
+  color: var(--low);
+}
+
+.consequence-badge.lav {
+  color: var(--text-muted);
+}
+
+.referral-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  background: var(--medium-bg);
+  color: var(--medium);
+  padding: 10px 12px;
+  border-radius: 10px;
+  font-size: 13px;
+  line-height: 1.5;
+  font-weight: 500;
+}
+
 .sources {
   margin-top: 2px;
   font-size: 12px;

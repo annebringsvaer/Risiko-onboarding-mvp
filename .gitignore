@@ -3,4 +3,5 @@ __pycache__/
 .venv/
 venv/
 logs/*.log
+logs/*.jsonl
 .DS_Store

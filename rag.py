@@ -18,6 +18,67 @@ from dataclasses import dataclass, field
 
 KNOWLEDGE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "knowledge")
 
+# =======================================================================
+# Risikostyring: kategorier, konsekvensnivå og terskler
+# -----------------------------------------------------------------------
+# Disse konstantene styrer når chatboten svarer, når den henviser til HR,
+# og når den avstår fra å svare. Juster dem her.
+# =======================================================================
+
+# Kategorinavn og konsekvens ("hoy"/"lav") følger KATEGORIER i
+# risk_dashboard.py (branch risiko_dashboard), slik at loggen kan brukes
+# direkte i risikodashboardet. Kategorien settes ut fra hvilket dokument
+# det beste søketreffet kommer fra.
+KATEGORIER = {
+    "hms-rutiner.txt": {"navn": "HMS", "konsekvens": "hoy"},
+    "ferie-og-fravaer.txt": {"navn": "Ferie og fravær", "konsekvens": "hoy"},
+    "it-tilgang-oppsett.txt": {"navn": "IT-tilgang", "konsekvens": "lav"},
+    "interne-verktoy.txt": {"navn": "Interne verktøy", "konsekvens": "lav"},
+    "velkomstguide.txt": {"navn": "Generell onboarding", "konsekvens": "lav"},
+}
+UKJENT_KATEGORI = "Ukjent"
+
+# Spørsmål som inneholder ett av disse ordene (også som del av et ord,
+# f.eks. "sykefraværet", "lønnsslipp") regnes alltid som høy konsekvens,
+# uansett hvilket dokument treffet kommer fra: HMS, rettigheter, lønn,
+# permisjon og fravær.
+HOY_KONSEKVENS_NOKKELORD = [
+    # HMS
+    "hms", "brann", "brenn", "evakuer", "rømning", "skade", "ulykke",
+    "avvik", "førstehjelp", "hjertestarter", "verneombud", "varsl",
+    "trakasser", "mobbing", "rusmidl", "arbeidsmiljø",
+    # Rettigheter og arbeidsforhold
+    "rettighet", "arbeidsavtale", "prøvetid", "oppsigelse", "overtid",
+    "pensjon", "forsikring", "tariff",
+    # Lønn
+    "lønn", "feriepenger",
+    # Permisjon og fravær
+    "permisjon", "fravær", "sykemeld", "egenmeld", "sykdom", "syke",
+    "omsorgsdag", "ferie",
+]
+
+# Terskler for BM25-score per konsekvensnivå. Under "lav" avstår chatboten
+# ALLTID fra å svare. Mellom "lav" og "hoy" vises svaret som middels sikkert.
+# Høy konsekvens har strengere terskler: et feil svar om HMS eller
+# rettigheter er mer alvorlig enn et feil svar om hvilket chatteverktøy vi
+# bruker. Tersklene er kalibrert mot spørsmålene i tests/test_rag.py.
+LOW_CONFIDENCE_THRESHOLD = 3.0
+HIGH_CONFIDENCE_THRESHOLD = 6.0
+HOY_KONSEKVENS_LOW_THRESHOLD = 4.0
+HOY_KONSEKVENS_HIGH_THRESHOLD = 7.5
+
+TERSKLER = {
+    "lav": {"lav": LOW_CONFIDENCE_THRESHOLD, "hoy": HIGH_CONFIDENCE_THRESHOLD},
+    "hoy": {"lav": HOY_KONSEKVENS_LOW_THRESHOLD, "hoy": HOY_KONSEKVENS_HIGH_THRESHOLD},
+}
+
+# Faktisk håndtering, samme verdier som i loggen og risikodashboardet.
+HANDTERING_SVAR = "svar"
+HANDTERING_AVSTA = "avstå"
+HANDTERING_HENVIS = "henvis"
+
+HR_KONTAKT = "HR (hr@risiko.no, tlf. 22 00 00 10) eller nærmeste leder"
+
 # Norske + engelske stoppord vi ikke ønsker skal dominere relevans-scoringen.
 STOPWORDS = {
     "og", "i", "jeg", "det", "at", "en", "et", "den", "til", "er", "som",
@@ -255,27 +316,26 @@ class BM25Index:
         return scores[:top_k]
 
 
-# --- Confidence-terskler -----------------------------------------------
+# --- Confidence --------------------------------------------------------
 # BM25-score er ubegrenset oppad (typisk 0-10 for korte avsnitt som dette),
 # og avhenger av antall matchende ord og hvor sjeldne/relevante de er.
-# Tersklene under er satt empirisk ved å teste et sett med typiske og
-# utenfor-tema-spørsmål mot kunnskapsbasen (se tests/test_rag.py).
+# Tersklene (se TERSKLER øverst) er satt empirisk ved å teste et sett med
+# typiske og utenfor-tema-spørsmål mot kunnskapsbasen (se tests/test_rag.py).
 #
 # Merk (kjent begrensning): dette er nøkkelordbasert søk uten semantisk
 # forståelse. Spørsmål som tilfeldigvis deler ord med kunnskapsbasen (f.eks.
-# "leder") kan noen ganger få en høyere score enn de fortjener. Vi velger
-# bevisst en lav terskel for "usikker" fremfor en streng en, fordi det er
-# viktigere å ikke overse gode svar enn å være perfekt presis for
-# spørsmål utenfor kunnskapsbasen - kildene vises alltid til brukeren slik
-# at de kan vurdere relevansen selv.
-HIGH_CONFIDENCE_THRESHOLD = 6.0
-LOW_CONFIDENCE_THRESHOLD = 3.0
+# "lønn" i "Permisjon uten lønn") kan få en høyere score enn de fortjener.
+# Derfor er tersklene strengere for spørsmål med høy konsekvens, og kilden
+# vises alltid slik at brukeren kan vurdere relevansen selv.
+
+CONFIDENCE_TEKST = {"high": "Sikker", "medium": "Middels sikker", "low": "Usikker"}
 
 
-def score_to_confidence_label(score: float) -> str:
-    if score >= HIGH_CONFIDENCE_THRESHOLD:
+def score_to_confidence_label(score: float, konsekvens: str = "lav") -> str:
+    terskler = TERSKLER[konsekvens]
+    if score >= terskler["hoy"]:
         return "high"
-    if score >= LOW_CONFIDENCE_THRESHOLD:
+    if score >= terskler["lav"]:
         return "medium"
     return "low"
 
@@ -285,6 +345,24 @@ def score_to_percentage(score: float) -> int:
     # og score >= ca. 10 nærmer seg 99 %. Rent kosmetisk for brukeren.
     pct = min(score / 10.0, 1.0) * 99
     return max(1, round(pct))
+
+
+def er_hoy_konsekvens_sporsmal(question: str) -> bool:
+    tekst = question.lower()
+    return any(ord_ in tekst for ord_ in HOY_KONSEKVENS_NOKKELORD)
+
+
+def klassifiser(question: str, toppkilde: str | None) -> tuple[str, str]:
+    """Returnerer (kategori, konsekvens) for et spørsmål.
+
+    Kategorien kommer fra dokumentet til beste treff. Konsekvensen er høy
+    hvis enten kategorien eller selve spørsmålet tilsier det - ved tvil
+    velges alltid det strengeste nivået."""
+    definisjon = KATEGORIER.get(toppkilde or "")
+    kategori = definisjon["navn"] if definisjon else UKJENT_KATEGORI
+    if (definisjon and definisjon["konsekvens"] == "hoy") or er_hoy_konsekvens_sporsmal(question):
+        return kategori, "hoy"
+    return kategori, "lav"
 
 
 class RagEngine:
@@ -301,26 +379,16 @@ class RagEngine:
         results = self.index.search(question, top_k=top_k)
 
         if not results:
-            return {
-                "answer": (
-                    "Jeg fant ingen relevant informasjon om dette i "
-                    "kunnskapsbasen. Usikker - sjekk med HR."
-                ),
-                "confidence_label": "low",
-                "confidence_pct": 0,
-                "sources": [],
-                "is_uncertain": True,
-            }
+            kategori, konsekvens = klassifiser(question, None)
+            return self._avsta(kategori, konsekvens, 0, None, [])
 
         best_score = results[0][1]
-        confidence_label = score_to_confidence_label(best_score)
+        kategori, konsekvens = klassifiser(question, results[0][0].source)
+        confidence_label = score_to_confidence_label(best_score, konsekvens)
         confidence_pct = score_to_percentage(best_score)
-        is_uncertain = confidence_label == "low"
 
-        # Slå sammen kontekst fra topp-treffene, gruppert per kilde/overskrift,
-        # og bygg et sammensatt svar av de mest relevante utdragene.
+        # Samle kontekst fra topp-treffene, gruppert per kilde/overskrift.
         seen_sources = []
-        answer_parts = []
         sources = []
         min_score = max(best_score * 0.25, 1.0)
         for chunk, score in results:
@@ -340,27 +408,71 @@ class RagEngine:
                     "excerpt": chunk.text,
                 }
             )
-            answer_parts.append(chunk.text)
 
-        if is_uncertain or not answer_parts:
-            answer_text = (
-                "Jeg er usikker på svaret basert på det jeg har tilgang til. "
-                "Usikker - sjekk med HR eller din nærmeste leder for å være "
-                "sikker på at informasjonen er korrekt og oppdatert."
+        # Under terskelen avstår chatboten alltid - uten å vise utdrag fra
+        # kunnskapsbasen som svar.
+        if confidence_label == "low" or not sources:
+            return self._avsta(kategori, konsekvens, confidence_pct, sources[:1], sources[:3])
+
+        top_source = sources[0]
+        answer_text = top_source["excerpt"]
+        if len(sources) > 1:
+            extra = sources[1]
+            answer_text += f"\n\nI tillegg, under \"{extra['heading']}\" ({extra['title']}): {extra['excerpt']}"
+
+        answer_text += "\n\n" + _kilde_og_usikkerhet(sources[:2], confidence_label, confidence_pct)
+
+        if konsekvens == "hoy":
+            handtering = HANDTERING_HENVIS
+            answer_text += (
+                "\n\nViktig: Dette gjelder HMS eller dine rettigheter. Viktig "
+                f"informasjon bør bekreftes hos {HR_KONTAKT}."
             )
-            if sources:
-                answer_text += f"\n\nDet nærmeste jeg fant var under \"{sources[0]['heading']}\" i {sources[0]['title']}, men treffet er for svakt til at jeg vil stole på det."
         else:
-            top_source = sources[0]
-            answer_text = f"{top_source['excerpt']}"
-            if len(sources) > 1:
-                extra = sources[1]
-                answer_text += f"\n\nI tillegg, under \"{extra['heading']}\" ({extra['title']}): {extra['excerpt']}"
+            handtering = HANDTERING_SVAR
 
         return {
             "answer": answer_text,
             "confidence_label": confidence_label,
             "confidence_pct": confidence_pct,
             "sources": sources[:3],
-            "is_uncertain": is_uncertain,
+            "is_uncertain": False,
+            "kategori": kategori,
+            "konsekvens": konsekvens,
+            "faktisk_handtering": handtering,
         }
+
+    def _avsta(self, kategori, konsekvens, confidence_pct, naermeste, sources) -> dict:
+        answer_text = (
+            "Jeg vet ikke svaret på dette. Jeg fant ikke god nok informasjon i "
+            "kunnskapsbasen til å gi et pålitelig svar, så jeg avstår heller "
+            f"enn å gjette. Ta kontakt med {HR_KONTAKT}."
+        )
+        if naermeste:
+            answer_text += (
+                f"\n\nKilde: ingen pålitelig kilde funnet. Nærmeste treff var "
+                f"«{naermeste[0]['heading']}» i {naermeste[0]['title']}, men "
+                "treffet er for svakt til at jeg vil stole på det."
+            )
+        else:
+            answer_text += "\n\nKilde: ingen relevant kilde funnet i kunnskapsbasen."
+        answer_text += f"\nUsikkerhet: Usikker ({confidence_pct} % confidence)."
+        return {
+            "answer": answer_text,
+            "confidence_label": "low",
+            "confidence_pct": confidence_pct,
+            "sources": sources,
+            "is_uncertain": True,
+            "kategori": kategori,
+            "konsekvens": konsekvens,
+            "faktisk_handtering": HANDTERING_AVSTA,
+        }
+
+
+def _kilde_og_usikkerhet(sources: list[dict], confidence_label: str, confidence_pct: int) -> str:
+    kilder = "; ".join(f"{s['title']} – «{s['heading']}»" for s in sources)
+    return (
+        f"Kilde: {kilder}.\n"
+        f"Usikkerhet: {CONFIDENCE_TEKST[confidence_label]} ({confidence_pct} % confidence). "
+        "Confidence sier hvor godt spørsmålet matcher kunnskapsbasen, ikke om svaret er riktig."
+    )
