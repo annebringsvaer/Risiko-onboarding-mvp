@@ -145,9 +145,10 @@ har strengere terskler. Alle terskler og kategorier står som konstanter øverst
 | Middels (medium)| 3.0 – 6.0      | 4.0 – 7.5      | Svar (høy konsekvens: svar + henvisning til HR)     |
 | Usikker (low)   | < 3.0          | < 4.0          | Avstår alltid: «Jeg vet ikke», henviser til HR, logges |
 
-I tillegg gjøres en **dekningssjekk**: hvis de viktigste ordene i spørsmålet
-(sjeldne eller ukjente ord, f.eks. «hund») ikke finnes i det beste treffet,
-avstår chatboten uansett score. Grensen styres av `MIN_DEKNING` øverst i `rag.py`.
+I tillegg gjøres en **dekningssjekk**: minst 60 % (`MIN_DEKNING = 0.6`) av de
+viktigste ordene i spørsmålet (sjeldne eller ukjente ord, f.eks. «hund») må finnes i
+de to beste treffene samlet. Ellers avstår chatboten uansett score. Vanlige ord som
+«arbeidsplassen», «kontoret» og «dager» teller ikke. Grensene står øverst i `rag.py`.
 
 Kilde og usikkerhetsnivå står alltid i selve svarteksten, også ved høy confidence.
 Tersklene er satt empirisk (se `tests/test_rag.py`). Den strengere terskelen for

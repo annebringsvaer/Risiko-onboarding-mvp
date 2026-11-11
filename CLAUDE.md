@@ -31,13 +31,17 @@ Chatboten er ikke et mål i seg selv, men et demonstrasjonsobjekt. Formålet er 
    - **Avstå fra å svare:** under laveste terskel avstår chatboten *alltid*. Den
      sier at den ikke vet og henviser til HR, uten å vise utdrag fra
      kunnskapsbasen som svar.
-   - **Dekningssjekk:** de viktigste ordene i spørsmålet må finnes i det beste
-     treffet (`MIN_DEKNING`, `VIKTIG_ORD_MIN_IDF`, `GENERISKE_ORD`,
-     `MIN_PREFIKS_LENGDE`). Ellers avstår chatboten *uansett score* og sier
-     hvilke ord treffet ikke handler om. Dette fjerner feilene fra sprint 2, der
-     f.eks. «Kan jeg ta med hunden min på kontoret?» ble besvart med avsnittet
-     «Utstyr» fordi begge inneholder «kontor». «Hjemmefra» er lagt inn som
-     synonym for «fjernarbeid» (`_SYNONYMS`) og treffer «VPN og fjernarbeid».
+   - **Dekningssjekk:** de viktigste ordene i spørsmålet må finnes i de beste
+     treffene samlet (like mange som brukes i svaret, `DEKNING_ANTALL_TREFF`).
+     Andelen styres av `MIN_DEKNING` (0.6), og de øvrige grensene av
+     `VIKTIG_ORD_MIN_IDF`, `GENERISKE_ORD` og `MIN_PREFIKS_LENGDE`. Er dekningen for
+     lav, avstår chatboten *uansett score* og sier hvilke ord treffet ikke handler om.
+     Vanlige ord som «arbeidsplassen», «kontoret» og «dager» er generiske og teller
+     ikke. Dette fjerner feilene fra sprint 2, der f.eks. «Kan jeg ta med hunden min
+     på kontoret?» ble besvart med avsnittet «Utstyr».
+   - **Synonymer:** `_SYNONYMS` brukes på både spørsmål og dokumenter (f.eks.
+     «hjemmefra» → «fjernarbeid»). `_SPORSMAL_UTVIDELSER` brukes bare på spørsmålet,
+     når kunnskapsbasen bruker et annet ord (f.eks. «legeerklæring» → «sykmelding»).
    - **Henvisning til HR:** svar på spørsmål med høy konsekvens avsluttes alltid
      med at viktig informasjon bør bekreftes hos HR eller nærmeste leder.
    - **Kildehenvisning og usikkerhet:** hvert svar, også ved høy confidence,
@@ -140,6 +144,8 @@ kunnskapsbasen. Testspørsmål legges til i `tests/test_rag.py`:
 - `HANDTERING_CASES`: forventet kategori, konsekvens og håndtering.
 - `DEKNING_AVSTA_CASES`: høy nok score, men viktige ord mangler i treffet. Skal gi
   `avstå`.
+- `DEKNING_BALANSE_CASES`: spørsmål som skal få svar og spørsmål som skal avstå.
+  Brukes for å sjekke at dekningssjekken verken er for streng eller for slapp.
 
 Spørsmålene i sidepanelet (`templates/index.html`) testes også. Ingen av dem skal
 gi `avstå`, slik at demoen ikke starter med at chatboten avstår.

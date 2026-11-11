@@ -143,6 +143,37 @@ def test_high_consequence_abstains_with_stricter_threshold():
         assert result["faktisk_handtering"] == "avstå", question
 
 
+# Dekningssjekken skal skille disse: de tre første har svar i kunnskapsbasen,
+# de tre siste skal avstå. (spørsmål, forventet håndtering, forventet avsnitt
+# eller None)
+DEKNING_BALANSE_CASES = [
+    ("Hva er rutinene for HMS på arbeidsplassen?", "henvis", "HMS-RUTINER - RISIKO AS"),
+    ("Hvor mange dager kan jeg være syk uten legeerklæring?", "henvis", "Sykefravær"),
+    ("Hvem er verneombudet?", "henvis", "Ansvar og organisering"),
+    ("Kan jeg ta med hunden min på kontoret?", "avstå", None),
+    ("Når får jeg lønn?", "avstå", None),
+    ("Hva slags bil kjører daglig leder?", "avstå", None),
+]
+
+
+def test_coverage_check_balance():
+    failures = []
+    for question, handtering, heading in DEKNING_BALANSE_CASES:
+        r = engine.answer(question)
+        got_heading = r["sources"][0]["heading"] if r["sources"] else None
+        if r["faktisk_handtering"] != handtering or (heading and got_heading != heading):
+            failures.append(
+                f"  - '{question}' -> {r['faktisk_handtering']} fra {got_heading!r}, "
+                f"forventet {handtering} fra {heading!r}"
+            )
+    assert not failures, "Feil håndtering:\n" + "\n".join(failures)
+
+
+def test_sick_leave_answer_mentions_egenmelding():
+    answer = engine.answer("Hvor mange dager kan jeg være syk uten legeerklæring?")["answer"]
+    assert "8 kalenderdager" in answer and "sykmelding" in answer
+
+
 def test_coverage_check_abstains_regardless_of_score():
     for question, missing_word in DEKNING_AVSTA_CASES:
         score = engine.index.search(question, 1)[0][1]
@@ -251,6 +282,8 @@ if __name__ == "__main__":
         test_unanswerable_questions_are_flagged_uncertain_or_low_signal,
         test_always_abstains_below_threshold,
         test_high_consequence_abstains_with_stricter_threshold,
+        test_coverage_check_balance,
+        test_sick_leave_answer_mentions_egenmelding,
         test_coverage_check_abstains_regardless_of_score,
         test_hjemmefra_hits_vpn_and_remote_work,
         test_coverage_check_tolerates_inflected_words,

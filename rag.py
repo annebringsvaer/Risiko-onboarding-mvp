@@ -84,7 +84,11 @@ HR_KONTAKT = "HR (hr@risiko.no, tlf. 22 00 00 10) eller nærmeste leder"
 # treffet bare deler et generelt ord med spørsmålet (f.eks. "Kan jeg ta med
 # hunden min på kontoret?" -> avsnittet "Utstyr", som bare deler "kontor").
 # MIN_DEKNING er andelen viktige ord som må finnes (1.0 = alle).
-MIN_DEKNING = 1.0
+# 0.6 betyr: med 1-2 viktige ord må alle finnes, med 3-4 holder det med
+# alle unntatt ett, og med 5 holder det med 3. 0.5 er for lavt: da får
+# "Hva slags bil kjører daglig leder?" svar fra avsnittet "Utvikling",
+# fordi ett av to viktige ord ("kjører") finnes der.
+MIN_DEKNING = 0.6
 # Et ord regnes som viktig hvis det er sjeldent i kunnskapsbasen (IDF minst
 # denne verdien) eller ikke finnes der i det hele tatt. Vanlige ord som
 # "leder" og "system" teller dermed ikke.
@@ -95,8 +99,14 @@ GENERISKE_ORD = {
     "hvis", "når", "hvilket", "hvilken", "hvilke", "slags", "mange", "mye",
     "lang", "lenge", "får", "lov", "må", "bør", "søker", "søke", "bruke",
     "bruker", "jobbe", "jobber", "trenger", "finnes", "noen", "skjer",
-    "gjelder", "fungerer",
+    "gjelder", "fungerer", "uten", "være",
+    # Vanlige ord om arbeidshverdagen som ikke sier noe om temaet.
+    "arbeidsplass", "arbeidsplassen", "kontor", "kontoret", "dag", "dager",
+    "dagen",
 }
+# Dekningen sjekkes mot de beste treffene samlet - like mange som brukes i
+# svarteksten - ikke bare det første.
+DEKNING_ANTALL_TREFF = 2
 # Et ord regnes også som funnet hvis stammen er minst så lang og er starten
 # på et ord i treffet (f.eks. "bestiller" -> "bestilling").
 MIN_PREFIKS_LENGDE = 5
@@ -155,8 +165,19 @@ _SYNONYMS: dict[str, list[str]] = {
     "hjemmefra": ["fjernarbeid"],
 }
 
+# Utvidelser som bare legges til spørsmålet, ikke dokumentene. Brukes når
+# kunnskapsbasen bruker et annet ord enn den ansatte, eller når ett avsnitt
+# svarer på spørsmålet med et beslektet ord. Hvis de ble lagt til
+# dokumentene også, ville alle avsnitt som nevner "verneombud" fått samme
+# ekstra poeng, i stedet for bare avsnittet som forklarer hvem det er.
+_SPORSMAL_UTVIDELSER: dict[str, list[str]] = {
+    "legeerklæring": ["sykmelding"],
+    "verneombud": ["arbeidsmiljøutvalg"],
+    "verneombudet": ["arbeidsmiljøutvalg"],
+}
 
-def tokenize(text: str) -> list[str]:
+
+def tokenize(text: str, sporsmal: bool = False) -> list[str]:
     raw_tokens = [t.lower() for t in TOKEN_RE.findall(text)]
     tokens = []
     for raw in raw_tokens:
@@ -165,6 +186,9 @@ def tokenize(text: str) -> list[str]:
         tokens.append(stem(raw))
         for synonym in _SYNONYMS.get(raw, []):
             tokens.append(stem(synonym))
+        if sporsmal:
+            for synonym in _SPORSMAL_UTVIDELSER.get(raw, []):
+                tokens.append(stem(synonym))
     return tokens
 
 
@@ -314,7 +338,7 @@ class BM25Index:
         return score, max_idf
 
     def search(self, query: str, top_k: int = 4) -> list[tuple[Chunk, float]]:
-        q_tokens = tokenize(query)
+        q_tokens = tokenize(query, sporsmal=True)
         if not q_tokens:
             return []
         q_tf = Counter(q_tokens)
@@ -408,12 +432,12 @@ class RagEngine:
         best_score = results[0][1]
         kategori, konsekvens = klassifiser(question, results[0][0].source)
         confidence_label = score_to_confidence_label(best_score, konsekvens)
-        manglende_ord = self.manglende_viktige_ord(question, results[0][0])
         confidence_pct = score_to_percentage(best_score)
 
         # Samle kontekst fra topp-treffene, gruppert per kilde/overskrift.
         seen_sources = []
         sources = []
+        source_chunks = []
         min_score = max(best_score * 0.25, 1.0)
         for chunk, score in results:
             if score < min_score:
@@ -422,6 +446,7 @@ class RagEngine:
             if key in seen_sources:
                 continue
             seen_sources.append(key)
+            source_chunks.append(chunk)
             sources.append(
                 {
                     "title": chunk.title,
@@ -437,6 +462,9 @@ class RagEngine:
         # kunnskapsbasen som svar.
         if confidence_label == "low" or not sources:
             return self._avsta(kategori, konsekvens, confidence_pct, sources[:1], sources[:3])
+        manglende_ord = self.manglende_viktige_ord(
+            question, source_chunks[:DEKNING_ANTALL_TREFF]
+        )
         if manglende_ord:
             return self._avsta(
                 kategori, konsekvens, confidence_pct, sources[:1], sources[:3], manglende_ord
@@ -470,16 +498,18 @@ class RagEngine:
             "faktisk_handtering": handtering,
         }
 
-    def manglende_viktige_ord(self, question: str, chunk: Chunk) -> list[str]:
-        """Returnerer de viktige ordene i spørsmålet som ikke finnes i chunken,
-        hvis dekningen er under MIN_DEKNING. Ellers en tom liste."""
-        chunk_tokens = set(chunk.tokens)
+    def manglende_viktige_ord(self, question: str, chunks: list[Chunk]) -> list[str]:
+        """Returnerer de viktige ordene i spørsmålet som ikke finnes i noen av
+        chunkene, hvis dekningen er under MIN_DEKNING. Ellers en tom liste."""
+        chunk_tokens = {t for chunk in chunks for t in chunk.tokens}
         viktige: dict[str, bool] = {}
         for raw in TOKEN_RE.findall(question):
             word = raw.lower()
             if word in STOPWORDS or word in GENERISKE_ORD or len(word) <= 1 or word in viktige:
                 continue
-            gruppe = {stem(word)} | {stem(s) for s in _SYNONYMS.get(word, [])}
+            gruppe = {stem(word)} | {
+                stem(s) for s in _SYNONYMS.get(word, []) + _SPORSMAL_UTVIDELSER.get(word, [])
+            }
             # Ukjente ord (finnes ikke i kunnskapsbasen) er alltid viktige.
             idf = max(self.index.idf.get(t, math.inf) for t in gruppe)
             if idf < VIKTIG_ORD_MIN_IDF:
