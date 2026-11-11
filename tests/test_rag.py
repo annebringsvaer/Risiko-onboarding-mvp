@@ -9,6 +9,7 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import json  # noqa: E402
+import re  # noqa: E402
 import tempfile  # noqa: E402
 
 import app as app_module  # noqa: E402
@@ -58,6 +59,15 @@ HANDTERING_CASES = [
     # Treffet er i velkomstguiden (lav), men prøvetid er en rettighet.
     ("Hvor lang er prøvetiden?", "Generell onboarding", "hoy", "henvis"),
     ("Hvor mye koster aksjen deres på børs?", "Ukjent", "lav", "avstå"),
+    ("Kan jeg jobbe hjemmefra?", "IT-tilgang", "lav", "svar"),
+    ("Kan jeg ta med hunden min på kontoret?", "IT-tilgang", "lav", "avstå"),
+]
+
+# Feil fra sprint 2: spørsmål der beste treff har høy nok score, men bare
+# deler et generelt ord med spørsmålet. (spørsmål, ord som mangler i treffet)
+DEKNING_AVSTA_CASES = [
+    ("Kan jeg ta med hunden min på kontoret?", "hunden"),
+    ("Hva slags bil kjører daglig leder?", "bil"),
 ]
 
 CONFIDENCE_RANK = {"low": 0, "medium": 1, "high": 2}
@@ -133,6 +143,43 @@ def test_high_consequence_abstains_with_stricter_threshold():
         assert result["faktisk_handtering"] == "avstå", question
 
 
+def test_coverage_check_abstains_regardless_of_score():
+    for question, missing_word in DEKNING_AVSTA_CASES:
+        score = engine.index.search(question, 1)[0][1]
+        assert score >= LOW_CONFIDENCE_THRESHOLD, (
+            f"'{question}' har score {score:.2f} - testen forutsetter at "
+            "scoren alene ville gitt et svar."
+        )
+        result = engine.answer(question)
+        assert result["faktisk_handtering"] == "avstå", question
+        assert missing_word in result["manglende_ord"], question
+        assert f"«{missing_word}»" in result["answer"], question
+
+
+def test_hjemmefra_hits_vpn_and_remote_work():
+    result = engine.answer("Kan jeg jobbe hjemmefra?")
+    assert result["faktisk_handtering"] == "svar"
+    assert result["sources"][0]["heading"] == "VPN og fjernarbeid"
+    assert "VPN" in result["answer"]
+
+
+def test_coverage_check_tolerates_inflected_words():
+    # "bestiller" skal matche "bestilling", og "skjer" er et generisk ord.
+    for question in ["Hvordan bestiller jeg hev/senk-pult?", "Hva skjer første dag?"]:
+        assert engine.answer(question)["faktisk_handtering"] != "avstå", question
+
+
+def test_sidebar_suggestions_are_answered():
+    path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "templates", "index.html")
+    with open(path, encoding="utf-8") as f:
+        html = f.read()
+    suggestions_html = html.split('id="suggestions"', 1)[1].split("</ul>", 1)[0]
+    suggestions = re.findall(r"<li>(.*?)</li>", suggestions_html)
+    assert len(suggestions) >= 5
+    for question in suggestions:
+        assert engine.answer(question)["faktisk_handtering"] != "avstå", question
+
+
 def test_category_consequence_and_handling():
     failures = []
     for question, kategori, konsekvens, handtering in HANDTERING_CASES:
@@ -204,6 +251,10 @@ if __name__ == "__main__":
         test_unanswerable_questions_are_flagged_uncertain_or_low_signal,
         test_always_abstains_below_threshold,
         test_high_consequence_abstains_with_stricter_threshold,
+        test_coverage_check_abstains_regardless_of_score,
+        test_hjemmefra_hits_vpn_and_remote_work,
+        test_coverage_check_tolerates_inflected_words,
+        test_sidebar_suggestions_are_answered,
         test_category_consequence_and_handling,
         test_high_consequence_answers_end_with_hr_referral,
         test_source_and_uncertainty_always_in_answer,

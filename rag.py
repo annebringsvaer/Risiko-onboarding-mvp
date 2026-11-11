@@ -79,6 +79,28 @@ HANDTERING_HENVIS = "henvis"
 
 HR_KONTAKT = "HR (hr@risiko.no, tlf. 22 00 00 10) eller nærmeste leder"
 
+# Dekningssjekk: de viktigste ordene i spørsmålet må finnes i det beste
+# treffet, ellers avstår chatboten uansett score. Dette stopper svar der
+# treffet bare deler et generelt ord med spørsmålet (f.eks. "Kan jeg ta med
+# hunden min på kontoret?" -> avsnittet "Utstyr", som bare deler "kontor").
+# MIN_DEKNING er andelen viktige ord som må finnes (1.0 = alle).
+MIN_DEKNING = 1.0
+# Et ord regnes som viktig hvis det er sjeldent i kunnskapsbasen (IDF minst
+# denne verdien) eller ikke finnes der i det hele tatt. Vanlige ord som
+# "leder" og "system" teller dermed ikke.
+VIKTIG_ORD_MIN_IDF = 1.8
+# Spørreord og generelle verb som aldri regnes som viktige, selv om de er
+# sjeldne eller mangler i kunnskapsbasen.
+GENERISKE_ORD = {
+    "hvis", "når", "hvilket", "hvilken", "hvilke", "slags", "mange", "mye",
+    "lang", "lenge", "får", "lov", "må", "bør", "søker", "søke", "bruke",
+    "bruker", "jobbe", "jobber", "trenger", "finnes", "noen", "skjer",
+    "gjelder", "fungerer",
+}
+# Et ord regnes også som funnet hvis stammen er minst så lang og er starten
+# på et ord i treffet (f.eks. "bestiller" -> "bestilling").
+MIN_PREFIKS_LENGDE = 5
+
 # Norske + engelske stoppord vi ikke ønsker skal dominere relevans-scoringen.
 STOPWORDS = {
     "og", "i", "jeg", "det", "at", "en", "et", "den", "til", "er", "som",
@@ -130,6 +152,7 @@ _SYNONYMS: dict[str, list[str]] = {
     "syk": ["sykefravær"],
     "sykt": ["sykefravær"],
     "ulykke": ["skade", "avvik"],
+    "hjemmefra": ["fjernarbeid"],
 }
 
 
@@ -385,6 +408,7 @@ class RagEngine:
         best_score = results[0][1]
         kategori, konsekvens = klassifiser(question, results[0][0].source)
         confidence_label = score_to_confidence_label(best_score, konsekvens)
+        manglende_ord = self.manglende_viktige_ord(question, results[0][0])
         confidence_pct = score_to_percentage(best_score)
 
         # Samle kontekst fra topp-treffene, gruppert per kilde/overskrift.
@@ -413,6 +437,10 @@ class RagEngine:
         # kunnskapsbasen som svar.
         if confidence_label == "low" or not sources:
             return self._avsta(kategori, konsekvens, confidence_pct, sources[:1], sources[:3])
+        if manglende_ord:
+            return self._avsta(
+                kategori, konsekvens, confidence_pct, sources[:1], sources[:3], manglende_ord
+            )
 
         top_source = sources[0]
         answer_text = top_source["excerpt"]
@@ -442,13 +470,49 @@ class RagEngine:
             "faktisk_handtering": handtering,
         }
 
-    def _avsta(self, kategori, konsekvens, confidence_pct, naermeste, sources) -> dict:
+    def manglende_viktige_ord(self, question: str, chunk: Chunk) -> list[str]:
+        """Returnerer de viktige ordene i spørsmålet som ikke finnes i chunken,
+        hvis dekningen er under MIN_DEKNING. Ellers en tom liste."""
+        chunk_tokens = set(chunk.tokens)
+        viktige: dict[str, bool] = {}
+        for raw in TOKEN_RE.findall(question):
+            word = raw.lower()
+            if word in STOPWORDS or word in GENERISKE_ORD or len(word) <= 1 or word in viktige:
+                continue
+            gruppe = {stem(word)} | {stem(s) for s in _SYNONYMS.get(word, [])}
+            # Ukjente ord (finnes ikke i kunnskapsbasen) er alltid viktige.
+            idf = max(self.index.idf.get(t, math.inf) for t in gruppe)
+            if idf < VIKTIG_ORD_MIN_IDF:
+                continue
+            viktige[word] = any(
+                t in chunk_tokens
+                or (len(t) >= MIN_PREFIKS_LENGDE and any(c.startswith(t) for c in chunk_tokens))
+                for t in gruppe
+            )
+
+        if not viktige:
+            return []
+        dekning = sum(viktige.values()) / len(viktige)
+        if dekning >= MIN_DEKNING:
+            return []
+        return [word for word, funnet in viktige.items() if not funnet]
+
+    def _avsta(
+        self, kategori, konsekvens, confidence_pct, naermeste, sources, manglende_ord=None
+    ) -> dict:
         answer_text = (
             "Jeg vet ikke svaret på dette. Jeg fant ikke god nok informasjon i "
             "kunnskapsbasen til å gi et pålitelig svar, så jeg avstår heller "
             f"enn å gjette. Ta kontakt med {HR_KONTAKT}."
         )
-        if naermeste:
+        if naermeste and manglende_ord:
+            ord_tekst = ", ".join(f"«{w}»" for w in manglende_ord)
+            answer_text += (
+                f"\n\nKilde: ingen pålitelig kilde funnet. Nærmeste treff var "
+                f"«{naermeste[0]['heading']}» i {naermeste[0]['title']}, men "
+                f"det handler ikke om {ord_tekst}."
+            )
+        elif naermeste:
             answer_text += (
                 f"\n\nKilde: ingen pålitelig kilde funnet. Nærmeste treff var "
                 f"«{naermeste[0]['heading']}» i {naermeste[0]['title']}, men "
@@ -466,6 +530,7 @@ class RagEngine:
             "kategori": kategori,
             "konsekvens": konsekvens,
             "faktisk_handtering": HANDTERING_AVSTA,
+            "manglende_ord": manglende_ord or [],
         }
 
 

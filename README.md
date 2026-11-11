@@ -127,6 +127,8 @@ Eksempler å prøve:
 - «Hva gjør jeg hvis det brenner på kontoret?» → svar + henvisning til HR (høy konsekvens)
 - «Hvem er fadderen min?»
 - «Hvilket system bruker vi for oppgavestyring?»
+- «Kan jeg jobbe hjemmefra?» → svar fra «VPN og fjernarbeid»
+- «Kan jeg ta med hunden min på kontoret?» → avstår: treffet («Utstyr») handler ikke om «hunden»
 - Noe helt urelatert, f.eks. «Hvor mye koster aksjen deres?» → skal gi usikkerhetsvarsel
 
 ## Confidence-score og usikkerhetsvarsel
@@ -142,6 +144,10 @@ har strengere terskler. Alle terskler og kategorier står som konstanter øverst
 | Sikker (high)   | ≥ 6.0          | ≥ 7.5          | Svar (høy konsekvens: svar + henvisning til HR)     |
 | Middels (medium)| 3.0 – 6.0      | 4.0 – 7.5      | Svar (høy konsekvens: svar + henvisning til HR)     |
 | Usikker (low)   | < 3.0          | < 4.0          | Avstår alltid: «Jeg vet ikke», henviser til HR, logges |
+
+I tillegg gjøres en **dekningssjekk**: hvis de viktigste ordene i spørsmålet
+(sjeldne eller ukjente ord, f.eks. «hund») ikke finnes i det beste treffet,
+avstår chatboten uansett score. Grensen styres av `MIN_DEKNING` øverst i `rag.py`.
 
 Kilde og usikkerhetsnivå står alltid i selve svarteksten, også ved høy confidence.
 Tersklene er satt empirisk (se `tests/test_rag.py`). Den strengere terskelen for

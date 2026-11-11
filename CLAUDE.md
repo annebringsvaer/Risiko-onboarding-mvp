@@ -31,6 +31,13 @@ Chatboten er ikke et mål i seg selv, men et demonstrasjonsobjekt. Formålet er 
    - **Avstå fra å svare:** under laveste terskel avstår chatboten *alltid*. Den
      sier at den ikke vet og henviser til HR, uten å vise utdrag fra
      kunnskapsbasen som svar.
+   - **Dekningssjekk:** de viktigste ordene i spørsmålet må finnes i det beste
+     treffet (`MIN_DEKNING`, `VIKTIG_ORD_MIN_IDF`, `GENERISKE_ORD`,
+     `MIN_PREFIKS_LENGDE`). Ellers avstår chatboten *uansett score* og sier
+     hvilke ord treffet ikke handler om. Dette fjerner feilene fra sprint 2, der
+     f.eks. «Kan jeg ta med hunden min på kontoret?» ble besvart med avsnittet
+     «Utstyr» fordi begge inneholder «kontor». «Hjemmefra» er lagt inn som
+     synonym for «fjernarbeid» (`_SYNONYMS`) og treffer «VPN og fjernarbeid».
    - **Henvisning til HR:** svar på spørsmål med høy konsekvens avsluttes alltid
      med at viktig informasjon bør bekreftes hos HR eller nærmeste leder.
    - **Kildehenvisning og usikkerhet:** hvert svar, også ved høy confidence,
@@ -47,6 +54,7 @@ Chatboten er ikke et mål i seg selv, men et demonstrasjonsobjekt. Formålet er 
    | Situasjon                                   | `faktisk_handtering` |
    |---------------------------------------------|----------------------|
    | Score under terskelen for konsekvensnivået  | `avstå`              |
+   | Viktige ord i spørsmålet mangler i treffet  | `avstå`              |
    | Over terskelen, høy konsekvens              | `henvis`             |
    | Over terskelen, lav konsekvens              | `svar`               |
 
@@ -130,6 +138,11 @@ kunnskapsbasen. Testspørsmål legges til i `tests/test_rag.py`:
 - `UNANSWERABLE_CASES`: utenfor tema, skal avvises.
 - `HOY_KONSEKVENS_AVSTA_CASES`: høy konsekvens med svakt treff, skal gi `avstå`.
 - `HANDTERING_CASES`: forventet kategori, konsekvens og håndtering.
+- `DEKNING_AVSTA_CASES`: høy nok score, men viktige ord mangler i treffet. Skal gi
+  `avstå`.
+
+Spørsmålene i sidepanelet (`templates/index.html`) testes også. Ingen av dem skal
+gi `avstå`, slik at demoen ikke starter med at chatboten avstår.
 
 ## Arbeidsflyt: branch og pull request
 
