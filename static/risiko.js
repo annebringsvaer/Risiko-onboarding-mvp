@@ -14,7 +14,16 @@ const side = {
   vurderte: document.getElementById("kpi-assessed"),
   vurderteTekst: document.getElementById("kpi-assessed-note"),
   korrekte: document.getElementById("kpi-success"),
+  korrekteTekst: document.getElementById("kpi-success-note"),
   feil: document.getElementById("kpi-errors"),
+  feilTekst: document.getElementById("kpi-errors-note"),
+  henvis: document.getElementById("kpi-henvis"),
+  feilAvsta: document.getElementById("kpi-feil-avsta"),
+  usikker: document.getElementById("kpi-usikker"),
+  uklassifisert: document.getElementById("kpi-uklassifisert"),
+  kildeDetalj: document.getElementById("risk-source-detail"),
+  kontrollStatus: document.getElementById("risk-control-status"),
+  kontrollRader: document.getElementById("risk-control-rows"),
   kategorier: document.getElementById("risk-categories"),
   kilderListe: document.getElementById("risk-evidence"),
   svakheter: document.getElementById("risk-insights"),
@@ -40,7 +49,13 @@ function element(tag, klasse = "", tekst = null) {
 }
 
 function prosent(tall) {
-  return typeof tall === "number" ? `${tall} %` : "—";
+  return typeof tall === "number" ? `${String(tall).replace(".", ",")} %` : "—";
+}
+
+function konsekvensTekst(verdi) {
+  if (verdi === "hoy") return ["Høy konsekvens", "high"];
+  if (verdi === "lav") return ["Lav konsekvens", "low"];
+  return ["Ikke klassifisert", ""];
 }
 
 function visVarsler(varsler) {
@@ -54,9 +69,88 @@ function skrivNokkeltall(data, fase) {
   side.kilder.textContent = data.kunnskapskilder;
   side.vurderte.textContent = s.vurderte;
   side.vurderteTekst.textContent = `${s.antall} testspørsmål registrert i fasen`;
-  side.korrekte.textContent = prosent(s.andel_korrekt);
-  side.feil.textContent = s.vurderte ? String(s.risikofylte_feil) : "—";
+  side.korrekte.textContent = prosent(s.andel_riktig_pct);
+  side.korrekteTekst.textContent = s.vurderte
+    ? `${s.riktig} riktig · ${s.delvis} delvis · ${s.feil} feil (manuell vurdering)`
+    : "Manuell vurdering (Ja / Delvis / Nei)";
+
+  // Feil uten konsekvensklassifisering regnes verken som høy eller lav risiko.
+  if (!s.vurderte) {
+    side.feil.textContent = "—";
+    side.feilTekst.textContent = "Feilaktige svar med klassifisert høy konsekvens";
+  } else if (s.feil_uten_konsekvens > 0 && s.risikofylte_feil === 0) {
+    side.feil.textContent = "Ikke klassifisert";
+    side.feilTekst.textContent = `${s.feil_uten_konsekvens} feilaktige svar mangler konsekvensklassifisering`;
+  } else {
+    side.feil.textContent = String(s.risikofylte_feil);
+    side.feilTekst.textContent = s.feil_uten_konsekvens
+      ? `Klassifisert høy konsekvens. ${s.feil_uten_konsekvens} feil til er ikke klassifisert`
+      : "Feilaktige svar med klassifisert høy konsekvens";
+  }
+
+  const harTester = s.antall > 0;
+  side.henvis.textContent = harTester ? s.henvis : "—";
+  side.feilAvsta.textContent = harTester ? s.feil_avsta : "—";
+  side.usikker.textContent = harTester ? s.usikker : "—";
+  side.uklassifisert.textContent = harTester ? s.konsekvens.ikke_klassifisert : "—";
   side.scope.textContent = `Fase: ${fase === "for" ? "før" : "etter"} endringer · ${s.vurderte} av ${s.antall} tester vurdert`;
+}
+
+function skrivDatakilde(data) {
+  const m = data.datakilder && data.datakilder.manuelle_tester;
+  if (!m || !m.antall_rader) {
+    side.kildeDetalj.textContent = "Ingen testprotokoll lastet inn. Tallene under kommer ikke fra svarloggen.";
+    return;
+  }
+  const deler = [
+    m.kilde ? `Kilde: ${m.kilde}` : null,
+    m.testet_dato ? `testet ${m.testet_dato}` : null,
+    m.for_versjon ? `før-versjon ${m.for_versjon}` : null,
+    m.etter_versjon ? `etter-versjon ${m.etter_versjon}` : null,
+    `${m.antall_rader} rader`,
+  ].filter(Boolean);
+  side.kildeDetalj.textContent = `${deler.join(" · ")}. Adskilt fra faktisk bruk (svarloggen).`;
+}
+
+const KONTROLLNAVN = {
+  antall: "Antall spørsmål",
+  riktig: "Riktig håndtert (Ja)",
+  delvis: "Delvis riktig",
+  feil: "Feil håndtert (Nei)",
+  andel_riktig_pct: "Andel riktig",
+  feilsvar_uten_kilde: "Feilsvar uten kilde",
+  feil_kilde: "Feil kilde",
+  feil_avsta: "Feilaktige avståelser",
+  henvis: "HR-henvisninger",
+};
+
+function skrivKontroll(data, fase) {
+  side.kontrollRader.replaceChildren();
+  const kontroll = data.kontroll && data.kontroll[fase];
+  if (!kontroll) {
+    side.kontrollStatus.textContent = "Ingen oppsummering";
+    const rad = element("tr");
+    const celle = element("td", "risk-empty", "Testprotokollen har ingen oppsummering for denne fasen.");
+    celle.colSpan = 4;
+    rad.append(celle);
+    side.kontrollRader.append(rad);
+    return;
+  }
+  side.kontrollStatus.textContent = kontroll.samsvar ? "Samsvarer" : "Avvik funnet";
+  for (const felt of kontroll.felter) {
+    const rad = element("tr");
+    const visning = v => felt.felt.endsWith("_pct") ? prosent(v) : (v === null || v === undefined ? "—" : v);
+    const status = element("span", `risk-state ${felt.samsvar ? "ok" : "bad"}`, felt.samsvar ? "Samsvar" : "Avvik");
+    const statusCelle = element("td");
+    statusCelle.append(status);
+    rad.append(
+      element("td", "", KONTROLLNAVN[felt.felt] || felt.felt),
+      element("td", "", visning(felt.oppgitt)),
+      element("td", "", visning(felt.beregnet)),
+      statusCelle
+    );
+    side.kontrollRader.append(rad);
+  }
 }
 
 function skrivKategorier(data, fase) {
@@ -68,7 +162,7 @@ function skrivKategorier(data, fase) {
     header.append(
       element("span", "risk-category-name", kategori.navn),
       element("span", "risk-category-note", statistikk.vurderte
-        ? `${statistikk.korrekte} av ${statistikk.vurderte} korrekt`
+        ? `${statistikk.riktig} av ${statistikk.vurderte} riktig${statistikk.delvis ? ` · ${statistikk.delvis} delvis` : ""}`
         : "Ingen vurderte tester")
     );
 
@@ -86,10 +180,9 @@ function skrivKategorier(data, fase) {
     meter.append(fyll);
 
     const vurderinger = statistikk.kunnskapsstyrke;
-    const antallStyrker = vurderinger.sterk + vurderinger.middels + vurderinger.svak;
-    const beskrivelse = antallStyrker
-      ? `Manuell kunnskapsstyrke: sterk ${vurderinger.sterk}, middels ${vurderinger.middels}, svak ${vurderinger.svak}.`
-      : "Kunnskapsstyrke er ikke vurdert ennå.";
+    const beskrivelse = statistikk.kunnskapsstyrke_vurdert
+      ? `Manuell kunnskapsstyrke: sterk ${vurderinger.sterk}, middels ${vurderinger.middels}, svak ${vurderinger.svak}, ikke vurdert ${vurderinger.ikke_vurdert}.`
+      : "Kunnskapsstyrke: ikke vurdert (mangler datagrunnlag).";
     const merknad = element("div", "risk-strength-detail", beskrivelse);
     wrapper.append(header, meter, merknad);
     side.kategorier.append(wrapper);
@@ -101,14 +194,16 @@ function skrivKildegrunnlag(data) {
   for (const kategori of data.kategorier) {
     const rad = element("div", "risk-evidence");
     const topp = element("div", "risk-evidence-top");
-    const alvor = kategori.konsekvens === "hoy" ? "Høy konsekvens" : "Lav konsekvens";
+    const [alvor, klasse] = konsekvensTekst(kategori.konsekvens);
     topp.append(
       element("strong", "", kategori.navn),
-      element("span", `risk-pill ${kategori.konsekvens === "hoy" ? "high" : "low"}`, alvor)
+      element("span", `risk-pill ${klasse}`, alvor)
     );
-    const kilde = kategori.kilde_finnes
-      ? `Kilde: ${kategori.dokument}`
-      : `Kilde mangler: ${kategori.dokument}`;
+    const kilde = !kategori.dokument
+      ? "Ingen kildedokument: kategorien er ikke fastslått i testprotokollen."
+      : kategori.kilde_finnes
+        ? `Kilde: ${kategori.dokument}`
+        : `Kilde mangler: ${kategori.dokument}`;
     rad.append(topp, element("small", "", kilde));
     side.kilderListe.append(rad);
   }
@@ -135,7 +230,7 @@ function skrivSvakheter(data, fase) {
     const overskrift = element("strong", "", `${kategori.navn}: ${statistikk.feil} feil av ${statistikk.vurderte} vurderte tester`);
     const detalj = statistikk.vurderte < 5
       ? "Foreløpig indikasjon: under fem vurderte spørsmål i denne kategorien."
-      : `Korrekt håndtering: ${prosent(statistikk.andel_korrekt)} i dette testsettet.`;
+      : `Riktig håndtering: ${prosent(statistikk.andel_riktig_pct)} i dette testsettet.`;
     kort.append(overskrift, document.createTextNode(detalj));
     side.svakheter.append(kort);
   }
@@ -145,8 +240,18 @@ const RESULTATNAVN = {
   korrekt_svar: ["Korrekt svar", "ok"],
   korrekt_avsta: ["Korrekt avstått", "ok"],
   feil_svar: ["Feil svar", "bad"],
+  delvis_svar: ["Delvis riktig svar", "partial"],
   feil_avsta: ["Avstod unødig", "bad"],
   uonsket_svar: ["Skulle avstått", "bad"],
+  usikker_historisk: ["Usikker (historisk)", "unknown"],
+  ikke_vurdert: ["Ikke vurdert", "unknown"],
+};
+
+// B sin manuelle vurdering er autoritativ for riktig/delvis/feil.
+const VURDERINGSNAVN = {
+  riktig: ["Ja", "ok"],
+  delvis: ["Delvis", "partial"],
+  feil: ["Nei", "bad"],
   ikke_vurdert: ["Ikke vurdert", "unknown"],
 };
 
@@ -154,7 +259,14 @@ function lesbarHandtering(verdi) {
   if (verdi === "svar") return "Gi svar";
   if (verdi === "henvis") return "Svar + henvisning til HR";
   if (verdi === "avsta") return "Avstå";
+  if (verdi === "usikker") return "Usikker (historisk før-versjon)";
   return "Ikke registrert";
+}
+
+function merkelapp(tekst, klasse) {
+  const celle = element("td");
+  celle.append(element("span", `risk-state ${klasse}`, tekst));
+  return celle;
 }
 
 function skrivTester(data, fase) {
@@ -165,7 +277,7 @@ function skrivTester(data, fase) {
   if (!tester.length) {
     const rad = element("tr");
     const celle = element("td", "risk-empty", "Ingen tester for denne fasen. B kan legge dem i data/risiko_tester.json.");
-    celle.colSpan = 8;
+    celle.colSpan = 10;
     rad.append(celle);
     side.tester.append(rad);
     return;
@@ -173,25 +285,34 @@ function skrivTester(data, fase) {
 
   for (const test of tester) {
     const rad = element("tr");
-    const [navn, klasse] = RESULTATNAVN[test.resultat] || RESULTATNAVN.ikke_vurdert;
-    const status = element("span", `risk-state ${klasse}`, navn);
-    const statusCelle = element("td");
-    statusCelle.append(status);
+    const [utfall, utfallKlasse] = RESULTATNAVN[test.resultat] || RESULTATNAVN.ikke_vurdert;
+    const [vurdering, vurderingKlasse] = VURDERINGSNAVN[test.vurdering] || VURDERINGSNAVN.ikke_vurdert;
+    const [konsekvens, konsekvensKlasse] = konsekvensTekst(test.konsekvens);
     const vurdertStyrke = test.kunnskapsstyrke
       ? test.kunnskapsstyrke.charAt(0).toUpperCase() + test.kunnskapsstyrke.slice(1)
       : "Ikke vurdert";
-    const merknad = test.confidence_pct === null
-      ? test.kommentar
-      : `${test.kommentar ? test.kommentar + " · " : ""}Søkerelevans: ${test.confidence_pct} %`;
+    const kategori = test.kategori === null || test.kategori === undefined
+      ? "Ikke oppgitt"
+      : `${test.kategori}${test.kategori_grunnlag ? " *" : ""}`;
+    const merknader = [
+      test.kommentar || null,
+      test.kategori_merknad ? `Kategori: ${test.kategori_merknad}` : null,
+      test.beste_treff ? `Beste treff: ${test.beste_treff}` : null,
+      test.confidence_pct === null ? null : `Søkerelevans: ${test.confidence_pct} %`,
+    ].filter(Boolean);
+    const kategoriCelle = element("td", "", kategori);
+    if (test.kategori_grunnlag) kategoriCelle.title = test.kategori_grunnlag;
     rad.append(
       element("td", "", test.id),
       element("td", "risk-question", test.sporsmal),
-      element("td", "", test.kategori),
+      kategoriCelle,
       element("td", "", lesbarHandtering(test.forventet_handtering)),
       element("td", "", lesbarHandtering(test.faktisk_handtering)),
-      statusCelle,
+      merkelapp(vurdering, vurderingKlasse),
+      merkelapp(utfall, utfallKlasse),
+      merkelapp(konsekvens, konsekvensKlasse === "high" ? "bad" : konsekvensKlasse === "low" ? "ok" : "unknown"),
       element("td", "", vurdertStyrke),
-      element("td", "risk-comment", merknad || "—")
+      element("td", "risk-comment", merknader.join(" · ") || "—")
     );
     side.tester.append(rad);
   }
@@ -245,6 +366,7 @@ function visData() {
   if (!risikodata) return;
   const fase = side.fase.value;
   skrivNokkeltall(risikodata, fase);
+  skrivKontroll(risikodata, fase);
   skrivKategorier(risikodata, fase);
   skrivKildegrunnlag(risikodata);
   skrivSvakheter(risikodata, fase);
@@ -259,6 +381,7 @@ async function lastDashboard() {
     const finnesEtter = risikodata.statistikk.etter.antall > 0;
     side.fase.value = finnesEtter ? "etter" : "for";
     visVarsler(risikodata.varsler);
+    skrivDatakilde(risikodata);
     skrivSvarlogg(risikodata);
     visData();
   } catch (feil) {

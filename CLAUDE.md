@@ -89,6 +89,8 @@ advarsler/kildehenvisninger uten en begrunnelse.
 ├── rag.py                      # RAG-motor: kategorier/terskler (øverst), BM25-søk, confidence, svarbygging
 ├── risk_dashboard.py           # Risikodashboard: /risiko og /api/risiko (kun aggregerte tall fra svarloggen + testdata)
 ├── requirements.txt            # Avhengigheter (kun Flask)
+├── data/
+│   └── risiko_tester.json      # Manuelle testresultater (før/etter v1.0-frys); B sine vurderinger er autoritative
 ├── knowledge/                  # Kunnskapsbasen – eneste kilde til svar (fiktivt innhold)
 │   ├── velkomstguide.txt
 │   ├── hms-rutiner.txt
@@ -107,7 +109,7 @@ advarsler/kildehenvisninger uten en begrunnelse.
 │   └── usikre_sporsmal.log     # Spørsmål chatboten avsto fra; ignoreres av git
 └── tests/
     ├── test_rag.py             # Tester for svar, avstå, konsekvensregel, kilder og logging
-    └── test_risk_dashboard.py  # Tester for dashboardet: henvis, svarlogg, manglende data, ende-til-ende
+    └── test_risk_dashboard.py  # Tester for dashboardet: henvis, usikker, manuell vurdering, svarlogg, B sine tall, ende-til-ende
 ```
 
 ## Kjøre appen lokalt på Windows
