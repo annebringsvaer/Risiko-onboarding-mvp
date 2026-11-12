@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html lang="no">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Risikoanalyse – Risiko AS</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  <style>
+    /* Stiler holdes i denne malen for å unngå endring av felles style.css. */
+    .risk-app { max-width: 1220px; margin: 0 auto; padding: 28px 24px 60px; }
+    .risk-header { display: flex; justify-content: space-between; align-items: center; gap: 16px; margin-bottom: 32px; flex-wrap: wrap; }
+    .risk-brand { display: flex; align-items: center; gap: 12px; }
+    .risk-logo { width: 43px; height: 43px; display: grid; place-items: center; border-radius: 12px; background: linear-gradient(135deg, #3654e8, #6a3de8); color: white; font-weight: 800; font-size: 20px; }
+    .risk-brand-name { font-size: 17px; font-weight: 750; }
+    .risk-brand-sub { font-size: 12px; color: #667085; margin-top: 2px; }
+    .risk-link { color: #3654e8; font-size: 13px; font-weight: 650; text-decoration: none; }
+    .risk-link:hover { text-decoration: underline; }
+    .risk-hero { padding: 0 0 18px; }
+    .risk-eyebrow { color: #3654e8; font-weight: 750; letter-spacing: .07em; font-size: 11px; text-transform: uppercase; }
+    .risk-hero h1 { margin: 10px 0 10px; font-size: clamp(27px, 4vw, 38px); letter-spacing: -.035em; line-height: 1.2; }
+    .risk-hero p { margin: 0; color: #667085; font-size: 14px; line-height: 1.7; max-width: 720px; }
+    .risk-toolbar { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin: 25px 0 17px; flex-wrap: wrap; }
+    .risk-scope { font-size: 12px; color: #667085; }
+    .risk-phase-control { display: flex; align-items: center; gap: 10px; font-size: 13px; font-weight: 650; }
+    .risk-phase-control select { border: 1px solid #d8deea; background: #fff; border-radius: 10px; padding: 10px 34px 10px 12px; font: inherit; color: #1c2333; cursor: pointer; }
+    .risk-notice { background: #fff9ea; border: 1px solid #e8d398; border-radius: 12px; padding: 12px 15px; font-size: 13px; line-height: 1.55; margin: 0 0 18px; color: #604c16; }
+    .risk-notice[hidden] { display: none; }
+    .risk-kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; margin-bottom: 22px; }
+    .risk-card { background: #fff; border: 1px solid #e3e7ee; border-radius: 15px; box-shadow: 0 2px 10px rgba(20, 30, 60, .035); }
+    .risk-kpi { padding: 21px 20px 19px; min-width: 0; }
+    .risk-kpi-label { color: #667085; font-size: 12px; font-weight: 600; line-height: 1.4; }
+    .risk-kpi-number { margin: 8px 0 7px; font-size: clamp(25px, 3vw, 32px); font-weight: 780; letter-spacing: -.035em; font-variant-numeric: tabular-nums; }
+    .risk-kpi-note { color: #667085; font-size: 11.5px; line-height: 1.5; }
+    .risk-main-grid { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(260px, 1fr); gap: 18px; margin-bottom: 18px; }
+    .risk-panel { padding: 23px; min-width: 0; }
+    .risk-section-head { display: flex; justify-content: space-between; align-items: start; gap: 10px; flex-wrap: wrap; margin-bottom: 18px; }
+    .risk-panel h2 { font-size: 17px; margin: 0 0 7px; letter-spacing: -.01em; }
+    .risk-panel p { margin: 0; line-height: 1.6; color: #667085; font-size: 12.5px; }
+    .risk-mini-tag { display: inline-flex; border-radius: 999px; padding: 5px 9px; background: #eff2fd; color: #3654e8; font-weight: 700; font-size: 10.5px; white-space: nowrap; }
+    .risk-category-list { display: grid; gap: 15px; }
+    .risk-category-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-bottom: 7px; }
+    .risk-category-name { font-size: 13px; font-weight: 675; }
+    .risk-category-note { color: #667085; font-size: 11px; white-space: nowrap; }
+    .risk-meter { overflow: hidden; background: #ecf0f6; border-radius: 10px; height: 8px; }
+    .risk-meter-fill { height: 100%; width: 0; border-radius: inherit; background: #5270e9; transition: width .3s ease; }
+    .risk-meter-fill.low { background: #c96d31; }
+    .risk-meter-fill.high { background: #228768; }
+    .risk-strength-detail { font-size: 11px; color: #667085; margin-top: 5px; }
+    .risk-evidence-list { display: grid; gap: 12px; }
+    .risk-evidence { border-bottom: 1px solid #edf0f5; padding: 0 0 11px; }
+    .risk-evidence:last-child { padding-bottom: 0; border: 0; }
+    .risk-evidence-top { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+    .risk-evidence strong { font-size: 12.5px; font-weight: 650; }
+    .risk-evidence small { display: block; margin-top: 5px; font-size: 11px; color: #667085; line-height: 1.5; overflow-wrap: anywhere; }
+    .risk-pill { border-radius: 999px; background: #f2f4f7; color: #475467; font-size: 10px; font-weight: 700; padding: 4px 8px; white-space: nowrap; }
+    .risk-pill.high { color: #ad3028; background: #fdeceb; }
+    .risk-pill.low { color: #286d57; background: #e5f7ef; }
+    .risk-insight { padding: 13px 15px; background: #f5f7fc; border: 1px solid #e6eaf5; border-radius: 11px; font-size: 12px; color: #475467; line-height: 1.6; }
+    .risk-insights { display: grid; gap: 10px; }
+    .risk-insight strong { display: block; color: #1c2333; margin-bottom: 4px; }
+    .risk-wide { margin-bottom: 18px; }
+    .risk-table-scroll { overflow-x: auto; border: 1px solid #e7eaf0; border-radius: 11px; }
+    .risk-table { width: 100%; border-collapse: collapse; font-size: 12px; text-align: left; }
+    .risk-table th { background: #f6f8fc; color: #596579; font-size: 11px; font-weight: 750; padding: 12px 13px; white-space: nowrap; }
+    .risk-table td { padding: 12px 13px; vertical-align: top; line-height: 1.5; border-top: 1px solid #edf0f5; }
+    .risk-table td:first-child { font-weight: 650; }
+    .risk-table tr:hover td { background: #fafbff; }
+    .risk-table .risk-question { min-width: 220px; max-width: 330px; }
+    .risk-table .risk-comment { min-width: 165px; max-width: 250px; color: #667085; }
+    .risk-state { display: inline-block; padding: 4px 8px; font-size: 11px; border-radius: 7px; white-space: nowrap; font-weight: 700; }
+    .risk-state.ok { color: #146745; background: #e4f5eb; }
+    .risk-state.bad { color: #a63c2c; background: #feeeeb; }
+    .risk-state.unknown { color: #5e6677; background: #f1f3f7; }
+    .risk-empty { padding: 24px; text-align: center; font-size: 12px; color: #667085; line-height: 1.7; }
+    .risk-method-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 15px; }
+    .risk-method { border-left: 3px solid #dfe5fd; padding: 1px 8px 1px 12px; }
+    .risk-method strong { display: block; font-size: 12.5px; margin-bottom: 6px; }
+    .risk-method p { font-size: 12px; }
+    .risk-footer { margin-top: 20px; color: #8690a1; font-size: 11px; text-align: center; }
+    @media (max-width: 900px) { .risk-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); } .risk-main-grid { grid-template-columns: 1fr; } }
+    @media (max-width: 600px) { .risk-app { padding: 18px 13px 35px; } .risk-kpi { padding: 15px; } .risk-kpis { gap: 9px; } .risk-panel { padding: 17px; } .risk-method-grid { grid-template-columns: 1fr; gap: 18px; } .risk-header { margin-bottom: 23px; } }
+  </style>
+  <script defer src="{{ url_for('static', filename='risiko.js') }}"></script>
+</head>
+<body>
+  <div class="risk-app">
+    <header class="risk-header">
+      <div class="risk-brand">
+        <div class="risk-logo" aria-hidden="true">R</div>
+        <div>
+          <div class="risk-brand-name">Risiko AS</div>
+          <div class="risk-brand-sub">Onboarding-assistent · Risikovurdering</div>
+        </div>
+      </div>
+      <a class="risk-link" href="/">← Tilbake til chatboten</a>
+    </header>
+
+    <section class="risk-hero" aria-labelledby="risk-title">
+      <div class="risk-eyebrow">Oversikt og dokumentasjon</div>
+      <h1 id="risk-title">Hvor pålitelig er assistenten?</h1>
+      <p>
+        Her viser vi hva assistenten har dokumentert grunnlag for å svare på,
+        hvilke spørsmålstyper som gir problemer, og hvilke konsekvenser feil kan få.
+        Målet er å synliggjøre usikkerhet – ikke å gi et falskt inntrykk av sikkerhet.
+      </p>
+    </section>
+
+    <div class="risk-toolbar">
+      <div class="risk-scope" id="risk-scope" aria-live="polite">Henter datagrunnlag …</div>
+      <label class="risk-phase-control" for="risk-phase">
+        Testfase
+        <select id="risk-phase">
+          <option value="for">Før endringer</option>
+          <option value="etter">Etter endringer</option>
+        </select>
+      </label>
+    </div>
+
+    <div class="risk-notice" id="risk-notice" role="status" hidden></div>
+
+    <section class="risk-kpis" aria-label="Nøkkeltall">
+      <div class="risk-card risk-kpi">
+        <div class="risk-kpi-label">Dokumenter i kunnskapsbasen</div>
+        <div class="risk-kpi-number" id="kpi-sources">—</div>
+        <div class="risk-kpi-note">Antall filer, ikke mål på kvalitet</div>
+      </div>
+      <div class="risk-card risk-kpi">
+        <div class="risk-kpi-label">Vurderte testspørsmål</div>
+        <div class="risk-kpi-number" id="kpi-assessed">—</div>
+        <div class="risk-kpi-note" id="kpi-assessed-note">Ingen testresultater ennå</div>
+      </div>
+      <div class="risk-card risk-kpi">
+        <div class="risk-kpi-label">Korrekt håndtering i test</div>
+        <div class="risk-kpi-number" id="kpi-success">—</div>
+        <div class="risk-kpi-note">Manuelt vurdert mot forventet håndtering</div>
+      </div>
+      <div class="risk-card risk-kpi">
+        <div class="risk-kpi-label">Risikofylte feil</div>
+        <div class="risk-kpi-number" id="kpi-errors">—</div>
+        <div class="risk-kpi-note">Feilaktige svar i høykonsekvens-kategorier</div>
+      </div>
+    </section>
+
+    <div class="risk-main-grid">
+      <section class="risk-card risk-panel" aria-labelledby="risk-categories-title">
+        <div class="risk-section-head">
+          <div>
+            <h2 id="risk-categories-title">Testresultater per spørsmålstype</h2>
+            <p>Andel korrekt håndterte av vurderte spørsmål – ikke sannsynlighet for et korrekt svar.</p>
+          </div>
+          <span class="risk-mini-tag">Manuelt vurdert</span>
+        </div>
+        <div class="risk-category-list" id="risk-categories" aria-live="polite"></div>
+      </section>
+
+      <section class="risk-card risk-panel" aria-labelledby="risk-evidence-title">
+        <div class="risk-section-head">
+          <div>
+            <h2 id="risk-evidence-title">Kildegrunnlag og konsekvens</h2>
+            <p>Foreløpig risikoinndeling som skal avklares med student A.</p>
+          </div>
+        </div>
+        <div class="risk-evidence-list" id="risk-evidence"></div>
+      </section>
+    </div>
+
+    <section class="risk-card risk-panel risk-wide" aria-labelledby="risk-log-title">
+      <div class="risk-section-head">
+        <div>
+          <h2 id="risk-log-title">Faktisk bruk (svarlogg)</h2>
+          <p>Aggregerte tall fra logs/svarlogg.jsonl. Viser hvordan chatboten håndterte spørsmålene, ikke om svarene var riktige. Riktighet krever manuell vurdering mot fasit. Enkeltspørsmål vises ikke.</p>
+        </div>
+        <span class="risk-mini-tag" id="log-count">0 logget</span>
+      </div>
+      <div class="risk-notice" id="log-notice" role="status" hidden></div>
+      <div class="risk-kpis" aria-label="Nøkkeltall fra svarloggen">
+        <div class="risk-card risk-kpi">
+          <div class="risk-kpi-label">Svar</div>
+          <div class="risk-kpi-number" id="log-svar">—</div>
+          <div class="risk-kpi-note">Lav konsekvens, besvart direkte</div>
+        </div>
+        <div class="risk-card risk-kpi">
+          <div class="risk-kpi-label">Svar + henvisning til HR</div>
+          <div class="risk-kpi-number" id="log-henvis">—</div>
+          <div class="risk-kpi-note">Regnes som svar, ikke avståelse</div>
+        </div>
+        <div class="risk-card risk-kpi">
+          <div class="risk-kpi-label">Avstått</div>
+          <div class="risk-kpi-number" id="log-avsta">—</div>
+          <div class="risk-kpi-note" id="log-avsta-note">Andel av alle loggede spørsmål</div>
+        </div>
+        <div class="risk-card risk-kpi">
+          <div class="risk-kpi-label">Høy konsekvens besvart uten HR-henvisning</div>
+          <div class="risk-kpi-number" id="log-hoy-uten">—</div>
+          <div class="risk-kpi-note">Oppfølgingspunkt som bør undersøkes, ikke automatisk regelbrudd</div>
+        </div>
+      </div>
+      <div class="risk-table-scroll">
+        <table class="risk-table">
+          <thead>
+            <tr>
+              <th scope="col">Kategori</th>
+              <th scope="col">Logget</th>
+              <th scope="col">Svar</th>
+              <th scope="col">Svar + HR</th>
+              <th scope="col">Avstått</th>
+              <th scope="col">Andel avstått</th>
+              <th scope="col">Høy konsekvens</th>
+            </tr>
+          </thead>
+          <tbody id="log-rows"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="risk-card risk-panel risk-wide" aria-labelledby="risk-weak-title">
+      <div class="risk-section-head">
+        <div>
+          <h2 id="risk-weak-title">Observerte svakheter</h2>
+          <p>Trekkes fra vurderte tester. Små testsett gir begrenset grunnlag for generalisering.</p>
+        </div>
+      </div>
+      <div class="risk-insights" id="risk-insights"></div>
+    </section>
+
+    <section class="risk-card risk-panel risk-wide" aria-labelledby="risk-tests-title">
+      <div class="risk-section-head">
+        <div>
+          <h2 id="risk-tests-title">Testprotokoll</h2>
+          <p>Viser forventet håndtering, faktisk håndtering og manuelt vurdert kunnskapsstyrke.</p>
+        </div>
+        <span class="risk-mini-tag" id="risk-test-count">0 testspørsmål</span>
+      </div>
+      <div class="risk-table-scroll">
+        <table class="risk-table">
+          <thead>
+            <tr>
+              <th scope="col">ID</th>
+              <th scope="col">Spørsmål</th>
+              <th scope="col">Kategori</th>
+              <th scope="col">Forventet</th>
+              <th scope="col">Faktisk</th>
+              <th scope="col">Resultat</th>
+              <th scope="col">Kunnskapsstyrke</th>
+              <th scope="col">Merknad</th>
+            </tr>
+          </thead>
+          <tbody id="risk-test-rows"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="risk-card risk-panel" aria-labelledby="risk-method-title">
+      <div class="risk-section-head">
+        <div>
+          <h2 id="risk-method-title">Slik skal tallene tolkes</h2>
+          <p>Tre ulike dimensjoner som ikke må blandes sammen.</p>
+        </div>
+      </div>
+      <div class="risk-method-grid">
+        <div class="risk-method">
+          <strong>Søkerelevans (confidence)</strong>
+          <p>Appens indikator bygger på samsvar mellom spørsmål og kilder. Den er ikke kalibrert som en sannsynlighet for korrekt svar.</p>
+        </div>
+        <div class="risk-method">
+          <strong>Kunnskapsstyrke</strong>
+          <p>En faglig vurdering av kildenes kvalitet, relevans og begrensninger. Må registreres manuelt per test; manglende vurdering vises som «Ikke vurdert».</p>
+        </div>
+        <div class="risk-method">
+          <strong>Konsekvens ved feil</strong>
+          <p>HMS og rettigheter er foreløpig klassifisert som høy konsekvens. Dette er uavhengig av om søkeindikatoren er høy eller lav.</p>
+        </div>
+      </div>
+    </section>
+
+    <footer class="risk-footer">Prosjektoppgave IND422 · Risiko AS · Testbasert demonstrasjon, ikke produksjonssertifisering</footer>
+  </div>
+</body>
+</html>

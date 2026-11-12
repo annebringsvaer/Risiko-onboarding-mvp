@@ -473,3 +473,16 @@ body {
     min-height: 520px;
   }
 }
+
+.dashboard-link {
+  margin-top: 16px;
+  font-size: 13px;
+}
+.dashboard-link a {
+  color: var(--primary);
+  font-weight: 600;
+  text-decoration: none;
+}
+.dashboard-link a:hover {
+  text-decoration: underline;
+}

@@ -13,6 +13,7 @@ from datetime import datetime, timezone
 from flask import Flask, jsonify, render_template, request
 
 from rag import RagEngine
+from risk_dashboard import risk_bp
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 LOG_DIR = os.path.join(BASE_DIR, "logs")
@@ -22,6 +23,9 @@ ANSWER_LOG_PATH = os.path.join(LOG_DIR, "svarlogg.jsonl")
 os.makedirs(LOG_DIR, exist_ok=True)
 
 app = Flask(__name__)
+# Risikodashboardet (/risiko og /api/risiko) leser svarloggen appen skriver.
+app.config["SVARLOGG_PATH"] = ANSWER_LOG_PATH
+app.register_blueprint(risk_bp)
 engine = RagEngine()
 
 
@@ -38,8 +42,8 @@ def log_uncertain_question(question: str, confidence_pct: int) -> None:
 
 def log_answer(question: str, result: dict) -> None:
     """Logger hvert svar som én JSON-linje. Feltnavn og verdier følger
-    testformatet i risk_dashboard.py (branch risiko_dashboard), slik at
-    radene kan brukes som grunnlag i data/risiko_tester.json."""
+    testformatet i risk_dashboard.py, som viser aggregerte tall fra
+    loggen på /risiko."""
     row = {
         "tidspunkt": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "sporsmal": question.replace("\n", " ").strip(),

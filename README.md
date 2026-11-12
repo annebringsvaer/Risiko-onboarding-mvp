@@ -170,18 +170,39 @@ Alle spørsmål som får «Usikker»-status logges til `logs/usikre_sporsmal.log
 I tillegg logges *hvert* svar som én JSON-linje i `logs/svarlogg.jsonl`, med
 feltene `kategori`, `konsekvens`, `confidence_pct` og `faktisk_handtering`
 (`svar`, `avstå` eller `henvis`), i samme format som risikodashboardet
-(`risk_dashboard.py` på branchen `risiko_dashboard`).
+(`risk_dashboard.py`).
 
 Tanken er at HR/administrator periodisk kan gå gjennom denne loggen for å se hvilke
 spørsmål ansatte faktisk stiller som chatboten ikke kan svare godt på, og bruke det
 til å utvide kunnskapsbasen.
 
+## Risikodashboard
+
+Dashboardet er registrert i Flask-appen (`risk_bp` i `app.py`) og ligger på
+**http://localhost:5000/risiko**. Rådata finnes som JSON på `/api/risiko`.
+Det har to datakilder:
+
+1. **Svarloggen** (`logs/svarlogg.jsonl`) viser hvordan chatboten faktisk håndterte
+   spørsmålene: antall `svar`, `henvis` (svar med henvisning til HR, regnes som svar)
+   og `avstå`, fordelt per kategori og konsekvensnivå. Konsekvensen hentes fra loggen,
+   ikke fra kategorien. Dashboardet viser **bare aggregerte tall**. Spørsmålstekst
+   og tidspunkt per henvendelse vises ikke. Indikatoren «Høy konsekvens besvart uten
+   HR-henvisning» er et oppfølgingspunkt som bør undersøkes, ikke et automatisk regelbrudd.
+2. **Manuelle testresultater** (`data/risiko_tester.json`, valgfri) viser om svarene var
+   *riktige*, vurdert mot fasit. `henvis` regnes som et svar, men aldri automatisk som
+   korrekt. Korrekthet krever manuell `svar_korrekt`. Mangler filen, viser dashboardet
+   at testdata ikke er lagt inn, og ingen resultater fylles inn.
+
+Loggdata sier altså noe om *håndtering*, ikke om *riktighet*. Confidence (BM25) er
+heller ikke en sannsynlighet for at svaret er riktig.
+
 ## Prosjektstruktur
 
 ```
 .
-├── app.py                      # Flask-app: nettside + /api/chat + /api/health
+├── app.py                      # Flask-app: nettside + /api/chat + /api/health, registrerer dashboardet
 ├── rag.py                      # RAG-motor: chunking, BM25-søk, svargenerering
+├── risk_dashboard.py           # Risikodashboard: /risiko + /api/risiko (aggregerer svarloggen og testdata)
 ├── requirements.txt
 ├── knowledge/                  # Kunnskapsbasen (kilden til alle svar)
 │   ├── velkomstguide.txt
@@ -190,20 +211,25 @@ til å utvide kunnskapsbasen.
 │   ├── ferie-og-fravaer.txt
 │   └── interne-verktoy.txt
 ├── templates/
-│   └── index.html              # Chat-UI
+│   ├── index.html              # Chat-UI
+│   └── risiko.html             # Risikodashboard
 ├── static/
 │   ├── style.css
-│   └── script.js
+│   ├── script.js
+│   └── risiko.js               # Frontend for risikodashboardet
 ├── logs/
+│   ├── svarlogg.jsonl          # Alle svar (opprettes automatisk)
 │   └── usikre_sporsmal.log     # Logg over usikre spørsmål (opprettes automatisk)
 └── tests/
-    └── test_rag.py             # Tester for RAG-motoren
+    ├── test_rag.py             # Tester for RAG-motoren
+    └── test_risk_dashboard.py  # Tester for risikodashboardet og integrasjonen
 ```
 
 ## Kjøre tester
 
 ```bash
 python3 tests/test_rag.py
+python3 tests/test_risk_dashboard.py
 # eller, hvis pytest er installert:
 python3 -m pytest tests/
 ```
