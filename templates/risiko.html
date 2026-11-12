@@ -164,6 +164,55 @@
       </section>
     </div>
 
+    <section class="risk-card risk-panel risk-wide" aria-labelledby="risk-log-title">
+      <div class="risk-section-head">
+        <div>
+          <h2 id="risk-log-title">Faktisk bruk (svarlogg)</h2>
+          <p>Aggregerte tall fra logs/svarlogg.jsonl. Viser hvordan chatboten håndterte spørsmålene, ikke om svarene var riktige. Riktighet krever manuell vurdering mot fasit. Enkeltspørsmål vises ikke.</p>
+        </div>
+        <span class="risk-mini-tag" id="log-count">0 logget</span>
+      </div>
+      <div class="risk-notice" id="log-notice" role="status" hidden></div>
+      <div class="risk-kpis" aria-label="Nøkkeltall fra svarloggen">
+        <div class="risk-card risk-kpi">
+          <div class="risk-kpi-label">Svar</div>
+          <div class="risk-kpi-number" id="log-svar">—</div>
+          <div class="risk-kpi-note">Lav konsekvens, besvart direkte</div>
+        </div>
+        <div class="risk-card risk-kpi">
+          <div class="risk-kpi-label">Svar + henvisning til HR</div>
+          <div class="risk-kpi-number" id="log-henvis">—</div>
+          <div class="risk-kpi-note">Regnes som svar, ikke avståelse</div>
+        </div>
+        <div class="risk-card risk-kpi">
+          <div class="risk-kpi-label">Avstått</div>
+          <div class="risk-kpi-number" id="log-avsta">—</div>
+          <div class="risk-kpi-note" id="log-avsta-note">Andel av alle loggede spørsmål</div>
+        </div>
+        <div class="risk-card risk-kpi">
+          <div class="risk-kpi-label">Høy konsekvens besvart uten HR-henvisning</div>
+          <div class="risk-kpi-number" id="log-hoy-uten">—</div>
+          <div class="risk-kpi-note">Oppfølgingspunkt som bør undersøkes, ikke automatisk regelbrudd</div>
+        </div>
+      </div>
+      <div class="risk-table-scroll">
+        <table class="risk-table">
+          <thead>
+            <tr>
+              <th scope="col">Kategori</th>
+              <th scope="col">Logget</th>
+              <th scope="col">Svar</th>
+              <th scope="col">Svar + HR</th>
+              <th scope="col">Avstått</th>
+              <th scope="col">Andel avstått</th>
+              <th scope="col">Høy konsekvens</th>
+            </tr>
+          </thead>
+          <tbody id="log-rows"></tbody>
+        </table>
+      </div>
+    </section>
+
     <section class="risk-card risk-panel risk-wide" aria-labelledby="risk-weak-title">
       <div class="risk-section-head">
         <div>

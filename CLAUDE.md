@@ -85,8 +85,9 @@ advarsler/kildehenvisninger uten en begrunnelse.
 .
 ├── CLAUDE.md                   # Denne filen
 ├── README.md                   # Utfyllende dokumentasjon (arkitektur, terskler, begrensninger)
-├── app.py                      # Flask-app: nettside, /api/chat, /api/health, logging av svar
+├── app.py                      # Flask-app: nettside, /api/chat, /api/health, logging av svar, registrerer risk_bp
 ├── rag.py                      # RAG-motor: kategorier/terskler (øverst), BM25-søk, confidence, svarbygging
+├── risk_dashboard.py           # Risikodashboard: /risiko og /api/risiko (kun aggregerte tall fra svarloggen + testdata)
 ├── requirements.txt            # Avhengigheter (kun Flask)
 ├── knowledge/                  # Kunnskapsbasen – eneste kilde til svar (fiktivt innhold)
 │   ├── velkomstguide.txt
@@ -95,15 +96,18 @@ advarsler/kildehenvisninger uten en begrunnelse.
 │   ├── ferie-og-fravaer.txt
 │   └── interne-verktoy.txt
 ├── templates/
-│   └── index.html              # Chat-UI
+│   ├── index.html              # Chat-UI
+│   └── risiko.html             # Risikodashboard
 ├── static/
 │   ├── style.css
-│   └── script.js               # Frontend: svar, confidence- og konsekvens-badge, varsel og kilder
+│   ├── script.js               # Frontend: svar, confidence- og konsekvens-badge, varsel og kilder
+│   └── risiko.js               # Frontend for risikodashboardet
 ├── logs/
 │   ├── svarlogg.jsonl          # Alle svar (kategori, konsekvens, håndtering); ignoreres av git
 │   └── usikre_sporsmal.log     # Spørsmål chatboten avsto fra; ignoreres av git
 └── tests/
-    └── test_rag.py             # Tester for svar, avstå, konsekvensregel, kilder og logging
+    ├── test_rag.py             # Tester for svar, avstå, konsekvensregel, kilder og logging
+    └── test_risk_dashboard.py  # Tester for dashboardet: henvis, svarlogg, manglende data, ende-til-ende
 ```
 
 ## Kjøre appen lokalt på Windows
@@ -140,6 +144,7 @@ $env:FLASK_DEBUG = "0"; python app.py  # slå av debug-modus
 
 ```powershell
 python tests\test_rag.py
+python tests\test_risk_dashboard.py
 # eller, med pytest installert:
 python -m pytest tests
 ```

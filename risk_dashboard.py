@@ -1,9 +1,8 @@
 """Risikodashboard for Risiko AS.
 
-Denne modulen er uavhengig av app.py og rag.py, slik at C kan endre
-søke-/svarlogikken uten at risikodashboardet får merge-konflikter.
-
-Når det skal integreres løsningen på main, er det nok å legge til:
+Modulen importerer ikke rag.py, slik at svarlogikken (frosset i v1.0-frys)
+og dashboardet kan endres uavhengig av hverandre. Blueprinten registreres i
+app.py:
 
     from risk_dashboard import risk_bp
     app.register_blueprint(risk_bp)
@@ -12,37 +11,48 @@ Ruter som registreres:
     GET /risiko       -> templates/risiko.html
     GET /api/risiko   -> aggregerte risikodata i JSON
 
-Testgrunnlag:
-    data/risiko_tester.json (valgfri, opprettes når B har testresultater)
+Datakilder:
 
-Format, f.eks.:
-    {
-      "tester": [
-        {
-          "id": "T01",
-          "fase": "for",
-          "sporsmal": "Hvordan får jeg tilgang til VPN?",
-          "kategori": "IT-tilgang",
-          "forventet_handtering": "svar",
-          "faktisk_handtering": "svar",
-          "svar_korrekt": true,
-          "kunnskapsstyrke": "middels",
-          "confidence_pct": 64,
-          "kommentar": "Riktig veiledning, men krever kontroll av oppdatert kilde."
-        }
-      ]
-    }
+1. Manuelle testresultater (B): data/risiko_tester.json (valgfri). Finnes
+   ikke filen, viser dashboardet at testdata mangler. Ingen resultater
+   fylles inn automatisk.
 
-Feltet 'svar_korrekt' må vurderes manuelt mot en fasit.
-'kunnskapsstyrke' må også vurderes manuelt ut fra kildenes kvalitet,
-relevans og hvor mye kunnskap vi mangler. BM25-relevans er IKKE en
-sannsynlighet for at svaret er korrekt.
+   Format, f.eks.:
+       {
+         "tester": [
+           {
+             "id": "T01",
+             "fase": "for",
+             "sporsmal": "Hvordan får jeg tilgang til VPN?",
+             "kategori": "IT-tilgang",
+             "forventet_handtering": "svar",
+             "faktisk_handtering": "svar",
+             "svar_korrekt": true,
+             "kunnskapsstyrke": "middels",
+             "confidence_pct": 64,
+             "kommentar": "Riktig veiledning, men krever kontroll av oppdatert kilde."
+           }
+         ]
+       }
 
-I 'fase' støttes 'for'/'etter' (og 'før' som alternativ stavemåte).
-Forventet/faktisk håndtering: 'svar' eller 'avsta' ('avstå' støttes også).
-Kategorinavn bør følge KATEGORIER nedenfor.
+   'svar_korrekt' og 'kunnskapsstyrke' må vurderes manuelt mot en fasit.
+   BM25-relevans er IKKE en sannsynlighet for at svaret er korrekt.
 
-Feil i datafilen gir varsler i dashboardet; appen skal ikke krasje.
+   I 'fase' støttes 'for'/'etter' (og 'før'). Forventet/faktisk håndtering:
+   'svar', 'henvis' eller 'avsta' ('avstå' støttes også). 'henvis' betyr at
+   chatboten svarer med henvisning til HR. Det regnes som et svar, ikke som
+   avståelse, men aldri automatisk som et korrekt svar: korrekthet bygger
+   bare på den manuelle vurderingen i 'svar_korrekt'.
+
+2. Svarloggen fra appen: logs/svarlogg.jsonl (én JSON-linje per svar, skrevet
+   av app.py:log_answer) med feltene tidspunkt, sporsmal, kategori,
+   konsekvens ('hoy'/'lav'), confidence_pct og faktisk_handtering
+   ('svar'/'henvis'/'avstå'). Dashboardet viser KUN aggregerte tall fra
+   loggen. Spørsmålstekst og tidspunkt per henvendelse eksponeres ikke.
+   Konsekvens hentes fra loggen (faktisk klassifisering), ikke fra
+   kategorien, fordi et spørsmål kan få høy konsekvens via nøkkelord.
+
+Feil i datafilene gir varsler i dashboardet; appen skal ikke krasje.
 """
 
 from __future__ import annotations
@@ -51,16 +61,17 @@ import json
 import os
 from pathlib import Path
 
-from flask import Blueprint, jsonify, render_template
+from flask import Blueprint, current_app, jsonify, render_template
 
 BASE_DIR = Path(__file__).resolve().parent
 KNOWLEDGE_DIR = BASE_DIR / "knowledge"
 TESTDATA_PATH = BASE_DIR / "data" / "risiko_tester.json"
+SVARLOGG_PATH = BASE_DIR / "logs" / "svarlogg.jsonl"
 
 risk_bp = Blueprint("risk", __name__)
 
-# FORELØPIG konsekvensinndeling. Må avklares før levering.
-# Endre bare denne listen hvis A reviderer kategoriene/konsekvensene.
+# Konsekvensinndeling. Navn og konsekvens skal stemme med KATEGORIER i
+# rag.py (sjekkes av tests/test_risk_dashboard.py).
 KATEGORIER = [
     {
         "id": "hms", "navn": "HMS", "konsekvens": "hoy",
@@ -83,6 +94,7 @@ KATEGORIER = [
         "dokument": "velkomstguide.txt",
     },
 ]
+UKJENT_KATEGORI = "Ukjent"
 
 KATEGORI_NAVN = {k["navn"]: k for k in KATEGORIER}
 KATEGORI_ALIAS = {
@@ -95,6 +107,10 @@ KATEGORI_ALIAS = {
     "onboarding": "Generell onboarding",
 }
 
+HANDTERINGER = ("svar", "henvis", "avsta")
+# Håndteringer som regnes som at chatboten har svart (ikke avstått).
+SVAR_HANDTERINGER = {"svar", "henvis"}
+
 
 def _standardiser_verdi(value: object, alternativer: set[str]) -> str | None:
     if not isinstance(value, str):
@@ -104,10 +120,38 @@ def _standardiser_verdi(value: object, alternativer: set[str]) -> str | None:
     return tekst if tekst in alternativer else None
 
 
+def _standardiser_kategori(value: object) -> str | None:
+    if not isinstance(value, str) or not value.strip():
+        return None
+    tekst = value.strip()
+    return KATEGORI_ALIAS.get(tekst.lower(), tekst)
+
+
+def _beregn_resultat(forventet: str, faktisk: str | None, korrekt: bool | None) -> str:
+    """Resultat fra forventet/faktisk håndtering og manuell fasit.
+
+    'henvis' regnes som et svar. Om svaret er korrekt, avgjøres bare av den
+    manuelle vurderingen; mangler den, er testen ikke vurdert."""
+    if faktisk is None:
+        return "ikke_vurdert"
+    forventet_svar = forventet in SVAR_HANDTERINGER
+    faktisk_svar = faktisk in SVAR_HANDTERINGER
+    if not forventet_svar:
+        return "korrekt_avsta" if not faktisk_svar else "uonsket_svar"
+    if not faktisk_svar:
+        return "feil_avsta"
+    if korrekt is True:
+        return "korrekt_svar"
+    if korrekt is False:
+        return "feil_svar"
+    return "ikke_vurdert"
+
+
 def _les_testgrunnlag(path: Path) -> tuple[list[dict], list[str]]:
     """Les manuelle tester uten å hevde at manglende vurderinger er feil."""
     if not path.is_file():
-        return [], ["Ingen testdata er lagt inn ennå. Venter på at (Del B) leverer data/risiko_tester.json."]
+        return [], ["Ingen manuelle testresultater er lagt inn ennå (data/risiko_tester.json mangler). "
+                    "Korrekthet kan ikke vurderes før testene er gjennomført og vurdert mot fasit."]
 
     try:
         payload = json.loads(path.read_text(encoding="utf-8"))
@@ -125,14 +169,10 @@ def _les_testgrunnlag(path: Path) -> tuple[list[dict], list[str]]:
             continue
 
         fase = _standardiser_verdi(rad.get("fase"), {"for", "etter"})
-        forventet = _standardiser_verdi(rad.get("forventet_handtering"), {"svar", "avsta"})
-        faktisk = _standardiser_verdi(rad.get("faktisk_handtering"), {"svar", "avsta"})
+        forventet = _standardiser_verdi(rad.get("forventet_handtering"), set(HANDTERINGER))
+        faktisk = _standardiser_verdi(rad.get("faktisk_handtering"), set(HANDTERINGER))
         sporsmal = rad.get("sporsmal")
-        kategori_inn = rad.get("kategori")
-        if isinstance(kategori_inn, str):
-            kategori = KATEGORI_ALIAS.get(kategori_inn.strip().lower(), kategori_inn.strip())
-        else:
-            kategori = None
+        kategori = _standardiser_kategori(rad.get("kategori"))
 
         if fase is None or forventet is None or not isinstance(sporsmal, str) or not sporsmal.strip() or kategori not in KATEGORI_NAVN:
             varsler.append(f"Test {nummer} ble hoppet over: ugyldig fase, kategori, spørsmål eller forventet håndtering.")
@@ -148,20 +188,6 @@ def _les_testgrunnlag(path: Path) -> tuple[list[dict], list[str]]:
         else:
             confidence = round(confidence)
 
-        # Resultat beregnes fra forventet/faktisk handling og manuell fasit.
-        if faktisk is None:
-            resultat = "ikke_vurdert"
-        elif forventet == "avsta":
-            resultat = "korrekt_avsta" if faktisk == "avsta" else "uonsket_svar"
-        elif faktisk == "avsta":
-            resultat = "feil_avsta"
-        elif korrekt is True:
-            resultat = "korrekt_svar"
-        elif korrekt is False:
-            resultat = "feil_svar"
-        else:
-            resultat = "ikke_vurdert"
-
         definisjon = KATEGORI_NAVN[kategori]
         tester.append({
             "id": str(rad.get("id") or f"T{nummer:02d}"),
@@ -175,7 +201,7 @@ def _les_testgrunnlag(path: Path) -> tuple[list[dict], list[str]]:
             "kunnskapsstyrke": styrke,
             "confidence_pct": confidence,
             "kommentar": str(rad.get("kommentar") or ""),
-            "resultat": resultat,
+            "resultat": _beregn_resultat(forventet, faktisk, korrekt),
         })
 
     return tester, varsler
@@ -198,12 +224,118 @@ def _statistikk(tester: list[dict]) -> dict:
     }
 
 
+# ---------------------------------------------------------------------------
+# Svarloggen (logs/svarlogg.jsonl)
+# ---------------------------------------------------------------------------
+
+def _les_svarlogg(path: Path) -> tuple[list[dict], list[str]]:
+    """Les svarloggen og behold bare feltene som trengs til aggregering.
+
+    Spørsmålstekst og tidspunkt leses ikke inn, slik at de ikke kan lekke
+    ut via API-et."""
+    if not path.is_file():
+        return [], ["Ingen spørsmål er logget ennå. Tallene fylles inn når chatboten brukes."]
+
+    try:
+        linjer = path.read_text(encoding="utf-8").splitlines()
+    except (OSError, UnicodeError):
+        return [], ["Kunne ikke lese svarloggen (filtilgang eller tegnkoding)."]
+
+    rader = []
+    ugyldige = 0
+    for linje in linjer:
+        if not linje.strip():
+            continue
+        try:
+            rad = json.loads(linje)
+        except json.JSONDecodeError:
+            ugyldige += 1
+            continue
+        if not isinstance(rad, dict):
+            ugyldige += 1
+            continue
+
+        handtering = _standardiser_verdi(rad.get("faktisk_handtering"), set(HANDTERINGER))
+        konsekvens = _standardiser_verdi(rad.get("konsekvens"), {"hoy", "lav"})
+        kategori = _standardiser_kategori(rad.get("kategori"))
+        if handtering is None or konsekvens is None or kategori is None:
+            ugyldige += 1
+            continue
+        if kategori not in KATEGORI_NAVN:
+            kategori = UKJENT_KATEGORI
+
+        confidence = rad.get("confidence_pct")
+        if isinstance(confidence, bool) or not isinstance(confidence, (int, float)) or not (0 <= confidence <= 100):
+            confidence = None
+
+        rader.append({
+            "kategori": kategori,
+            "konsekvens": konsekvens,
+            "handtering": handtering,
+            "confidence_pct": confidence,
+        })
+
+    varsler = []
+    if ugyldige:
+        varsler.append(f"{ugyldige} linje(r) i svarloggen ble hoppet over (ugyldig format).")
+    if not rader and not ugyldige:
+        varsler.append("Ingen spørsmål er logget ennå. Tallene fylles inn når chatboten brukes.")
+    return rader, varsler
+
+
+def _tell_handteringer(rader: list[dict]) -> dict:
+    tellinger = {h: sum(r["handtering"] == h for r in rader) for h in HANDTERINGER}
+    antall = len(rader)
+    return {
+        "antall": antall,
+        **tellinger,
+        "besvart": tellinger["svar"] + tellinger["henvis"],
+        "andel_avsta": round(100 * tellinger["avsta"] / antall) if antall else None,
+    }
+
+
+def _snitt(verdier: list[float]) -> int | None:
+    return round(sum(verdier) / len(verdier)) if verdier else None
+
+
+def _loggstatistikk(rader: list[dict]) -> dict:
+    """Aggregert oversikt over faktisk håndtering i appen."""
+    kategorier = []
+    for navn in [k["navn"] for k in KATEGORIER] + [UKJENT_KATEGORI]:
+        relaterte = [r for r in rader if r["kategori"] == navn]
+        definisjon = KATEGORI_NAVN.get(navn)
+        kategorier.append({
+            "navn": navn,
+            "kategori_konsekvens": definisjon["konsekvens"] if definisjon else None,
+            **_tell_handteringer(relaterte),
+            "hoy_konsekvens": sum(r["konsekvens"] == "hoy" for r in relaterte),
+        })
+
+    return {
+        **_tell_handteringer(rader),
+        "konsekvens": {
+            nivaa: _tell_handteringer([r for r in rader if r["konsekvens"] == nivaa])
+            for nivaa in ("hoy", "lav")
+        },
+        "kategorier": kategorier,
+        "snitt_confidence": {
+            h: _snitt([r["confidence_pct"] for r in rader if r["handtering"] == h and r["confidence_pct"] is not None])
+            for h in HANDTERINGER
+        },
+        # Oppfølgingspunkt, ikke automatisk regelbrudd: høy konsekvens som er
+        # besvart uten HR-henvisning bør undersøkes manuelt.
+        "hoy_uten_henvisning": sum(r["konsekvens"] == "hoy" and r["handtering"] == "svar" for r in rader),
+    }
+
+
 def bygg_risikodata(
     testdata_path: Path = TESTDATA_PATH,
     knowledge_dir: Path = KNOWLEDGE_DIR,
+    svarlogg_path: Path = SVARLOGG_PATH,
 ) -> dict:
     """Bygg et JSON-serialiserbart dashboard uten å kalle chatboten."""
     tester, varsler = _les_testgrunnlag(Path(testdata_path))
+    loggrader, loggvarsler = _les_svarlogg(Path(svarlogg_path))
     alle_filer = list(Path(knowledge_dir).glob("*.txt")) if Path(knowledge_dir).is_dir() else []
 
     kategorier = []
@@ -229,6 +361,10 @@ def bygg_risikodata(
         },
         "tester": tester,
         "varsler": varsler,
+        "svarlogg": {
+            **_loggstatistikk(loggrader),
+            "varsler": loggvarsler,
+        },
     }
 
 
@@ -239,11 +375,14 @@ def risiko_side():
 
 @risk_bp.get("/api/risiko")
 def risiko_api():
-    return jsonify(bygg_risikodata())
+    return jsonify(bygg_risikodata(
+        testdata_path=current_app.config.get("RISIKO_TESTDATA_PATH", TESTDATA_PATH),
+        svarlogg_path=current_app.config.get("SVARLOGG_PATH", SVARLOGG_PATH),
+    ))
 
 
 if __name__ == "__main__":
-    # Forhåndsvisning på egen branch uten å endre app.py for lokal testing.
+    # Frittstående forhåndsvisning av dashboardet (uten chatboten).
     from flask import Flask, redirect, url_for
 
     preview_app = Flask(__name__)

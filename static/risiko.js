@@ -20,6 +20,14 @@ const side = {
   svakheter: document.getElementById("risk-insights"),
   tester: document.getElementById("risk-test-rows"),
   testAntall: document.getElementById("risk-test-count"),
+  loggAntall: document.getElementById("log-count"),
+  loggVarsel: document.getElementById("log-notice"),
+  loggSvar: document.getElementById("log-svar"),
+  loggHenvis: document.getElementById("log-henvis"),
+  loggAvsta: document.getElementById("log-avsta"),
+  loggAvstaTekst: document.getElementById("log-avsta-note"),
+  loggHoyUten: document.getElementById("log-hoy-uten"),
+  loggRader: document.getElementById("log-rows"),
 };
 
 let risikodata = null;
@@ -144,6 +152,7 @@ const RESULTATNAVN = {
 
 function lesbarHandtering(verdi) {
   if (verdi === "svar") return "Gi svar";
+  if (verdi === "henvis") return "Svar + henvisning til HR";
   if (verdi === "avsta") return "Avstå";
   return "Ikke registrert";
 }
@@ -188,6 +197,50 @@ function skrivTester(data, fase) {
   }
 }
 
+// Svarloggen er uavhengig av testfase; den viser bare aggregerte tall.
+function skrivSvarlogg(data) {
+  const logg = data.svarlogg;
+  if (!logg) return;
+  const meldinger = Array.isArray(logg.varsler) ? logg.varsler : [];
+  side.loggVarsel.hidden = meldinger.length === 0;
+  side.loggVarsel.textContent = meldinger.join(" ");
+
+  const harData = logg.antall > 0;
+  side.loggAntall.textContent = `${logg.antall} logget`;
+  side.loggSvar.textContent = harData ? logg.svar : "—";
+  side.loggHenvis.textContent = harData ? logg.henvis : "—";
+  side.loggAvsta.textContent = harData ? logg.avsta : "—";
+  side.loggAvstaTekst.textContent = harData
+    ? `${prosent(logg.andel_avsta)} av ${logg.antall} spørsmål`
+    : "Ingen spørsmål logget ennå";
+  side.loggHoyUten.textContent = harData ? logg.hoy_uten_henvisning : "—";
+
+  side.loggRader.replaceChildren();
+  if (!harData) {
+    const rad = element("tr");
+    const celle = element("td", "risk-empty", "Ingen spørsmål er logget ennå. Tallene fylles inn når chatboten brukes.");
+    celle.colSpan = 7;
+    rad.append(celle);
+    side.loggRader.append(rad);
+    return;
+  }
+
+  for (const kategori of logg.kategorier) {
+    if (kategori.antall === 0) continue;
+    const rad = element("tr");
+    rad.append(
+      element("td", "", kategori.navn),
+      element("td", "", kategori.antall),
+      element("td", "", kategori.svar),
+      element("td", "", kategori.henvis),
+      element("td", "", kategori.avsta),
+      element("td", "", prosent(kategori.andel_avsta)),
+      element("td", "", kategori.hoy_konsekvens)
+    );
+    side.loggRader.append(rad);
+  }
+}
+
 function visData() {
   if (!risikodata) return;
   const fase = side.fase.value;
@@ -206,6 +259,7 @@ async function lastDashboard() {
     const finnesEtter = risikodata.statistikk.etter.antall > 0;
     side.fase.value = finnesEtter ? "etter" : "for";
     visVarsler(risikodata.varsler);
+    skrivSvarlogg(risikodata);
     visData();
   } catch (feil) {
     side.scope.textContent = "Kunne ikke hente risikodata";
