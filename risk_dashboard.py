@@ -41,8 +41,24 @@ Datakilder:
    I 'fase' støttes 'for'/'etter' (og 'før'). Forventet/faktisk håndtering:
    'svar', 'henvis' eller 'avsta' ('avstå' støttes også). 'henvis' betyr at
    chatboten svarer med henvisning til HR. Det regnes som et svar, ikke som
-   avståelse, men aldri automatisk som et korrekt svar: korrekthet bygger
-   bare på den manuelle vurderingen i 'svar_korrekt'.
+   avståelse, men aldri automatisk som et korrekt svar.
+
+   Valgfrie felt fra B sin testprotokoll (Excel-konvertering):
+   - 'manuell_vurdering': 'ja' / 'delvis' / 'nei'. Er autoritativ for om
+     testen er riktig håndtert. Mangler den, brukes 'svar_korrekt'
+     (true = ja, false = nei). Er de i konflikt, vinner 'manuell_vurdering'
+     og det gis et varsel.
+   - faktisk håndtering 'usikker': historisk utfall fra før-versjonen. Telles
+     for seg og behandles IKKE som avståelse. Godtas bare i testdata, ikke i
+     svarloggen.
+   - 'konsekvens_excel' (eller 'konsekvens'): 'hoy' / 'lav'. Mangler den, er
+     testen «ikke klassifisert». Konsekvens avledes ikke fra kategorien;
+     kategoriens nivå vises bare separat som 'kategori_konsekvens'.
+   - Kategori 'Ukjent' eller manglende kategori beholdes som det er, uten å
+     gjette en kategori.
+   - 'oppsummering_excel': B sine oppgitte tall per fase. Dashboardet
+     sammenligner dem med tallene beregnet fra radene, og rapporterer avvik
+     uten å endre vurderingene.
 
 2. Svarloggen fra appen: logs/svarlogg.jsonl (én JSON-linje per svar, skrevet
    av app.py:log_answer) med feltene tidspunkt, sporsmal, kategori,
@@ -110,13 +126,29 @@ KATEGORI_ALIAS = {
 HANDTERINGER = ("svar", "henvis", "avsta")
 # Håndteringer som regnes som at chatboten har svart (ikke avstått).
 SVAR_HANDTERINGER = {"svar", "henvis"}
+# Historiske utfall som bare finnes i testdata fra før-versjonen. 'usikker'
+# er verken et svar eller en avståelse, og tolkes ikke automatisk.
+HISTORISKE_HANDTERINGER = ("usikker",)
+TEST_HANDTERINGER = HANDTERINGER + HISTORISKE_HANDTERINGER
+
+# Manuell vurdering (B): ja/delvis/nei -> vurdering i dashboardet.
+MANUELL_VURDERING = {"ja": "riktig", "delvis": "delvis", "nei": "feil"}
+VURDERINGER = ("riktig", "delvis", "feil")
+KONSEKVENSNIVAER = ("hoy", "lav")
+KUNNSKAPSSTYRKER = ("sterk", "middels", "svak")
+
+# Felt i 'oppsummering_excel' som kontrolleres mot beregnede tall.
+KONTROLLFELT = (
+    "antall", "riktig", "delvis", "feil", "andel_riktig_pct",
+    "feilsvar_uten_kilde", "feil_kilde", "feil_avsta", "henvis",
+)
 
 
 def _standardiser_verdi(value: object, alternativer: set[str]) -> str | None:
     if not isinstance(value, str):
         return None
     tekst = value.strip().lower()
-    tekst = {"før": "for", "avstå": "avsta"}.get(tekst, tekst)
+    tekst = {"før": "for", "avstå": "avsta", "høy": "hoy"}.get(tekst, tekst)
     return tekst if tekst in alternativer else None
 
 
@@ -127,39 +159,92 @@ def _standardiser_kategori(value: object) -> str | None:
     return KATEGORI_ALIAS.get(tekst.lower(), tekst)
 
 
-def _beregn_resultat(forventet: str, faktisk: str | None, korrekt: bool | None) -> str:
-    """Resultat fra forventet/faktisk håndtering og manuell fasit.
+def _beregn_resultat(forventet: str, faktisk: str | None, vurdering: str | bool | None) -> str:
+    """Utfallstype fra forventet/faktisk håndtering og manuell vurdering.
 
     'henvis' regnes som et svar. Om svaret er korrekt, avgjøres bare av den
-    manuelle vurderingen; mangler den, er testen ikke vurdert."""
+    manuelle vurderingen; mangler den, er testen ikke vurdert. Historisk
+    'usikker' får egen utfallstype og regnes ikke som avståelse.
+
+    'vurdering' kan være 'riktig'/'delvis'/'feil' eller (bakoverkompatibelt)
+    True/False fra 'svar_korrekt'."""
+    if vurdering is True:
+        vurdering = "riktig"
+    elif vurdering is False:
+        vurdering = "feil"
     if faktisk is None:
         return "ikke_vurdert"
+    if faktisk in HISTORISKE_HANDTERINGER:
+        return "usikker_historisk"
     forventet_svar = forventet in SVAR_HANDTERINGER
     faktisk_svar = faktisk in SVAR_HANDTERINGER
     if not forventet_svar:
         return "korrekt_avsta" if not faktisk_svar else "uonsket_svar"
     if not faktisk_svar:
         return "feil_avsta"
-    if korrekt is True:
-        return "korrekt_svar"
-    if korrekt is False:
-        return "feil_svar"
-    return "ikke_vurdert"
+    return {"riktig": "korrekt_svar", "feil": "feil_svar", "delvis": "delvis_svar"}.get(vurdering, "ikke_vurdert")
 
 
-def _les_testgrunnlag(path: Path) -> tuple[list[dict], list[str]]:
-    """Les manuelle tester uten å hevde at manglende vurderinger er feil."""
+def _les_vurdering(rad: dict, test_id: str) -> tuple[str | None, str | None, bool | None, str | None]:
+    """Returner (vurdering, kilde, svar_korrekt, varsel).
+
+    'manuell_vurdering' er autoritativ. 'svar_korrekt' brukes bare når den
+    manuelle vurderingen mangler."""
+    korrekt = rad.get("svar_korrekt")
+    if not isinstance(korrekt, bool):
+        korrekt = None
+    manuell = rad.get("manuell_vurdering")
+    manuell = manuell.strip().lower() if isinstance(manuell, str) else None
+
+    if manuell in MANUELL_VURDERING:
+        vurdering = MANUELL_VURDERING[manuell]
+        varsel = None
+        if korrekt is not None and (vurdering == "riktig") != korrekt:
+            varsel = (f"Test {test_id}: manuell_vurdering «{manuell}» og svar_korrekt={str(korrekt).lower()} "
+                      "er i konflikt. Den manuelle vurderingen er brukt.")
+        return vurdering, "manuell_vurdering", korrekt, varsel
+    if korrekt is not None:
+        return ("riktig" if korrekt else "feil"), "svar_korrekt", korrekt, None
+    varsel = None
+    if manuell:
+        varsel = f"Test {test_id}: ukjent manuell_vurdering «{manuell}». Testen regnes som ikke vurdert."
+    return None, None, None, varsel
+
+
+def _les_konsekvens(rad: dict) -> str | None:
+    """Konsekvens bare fra eksplisitt klassifisering i testdataene."""
+    for felt in ("konsekvens_excel", "konsekvens"):
+        nivaa = _standardiser_verdi(rad.get(felt), set(KONSEKVENSNIVAER))
+        if nivaa is not None:
+            return nivaa
+    return None
+
+
+def _les_testdata(path: Path) -> tuple[list[dict], list[str], dict]:
+    """Les manuelle tester uten å hevde at manglende vurderinger er feil.
+
+    Returnerer (tester, varsler, metadata). Metadata inneholder kilde,
+    testdato, versjoner, konverteringsnotater og B sin oppsummering."""
     if not path.is_file():
         return [], ["Ingen manuelle testresultater er lagt inn ennå (data/risiko_tester.json mangler). "
-                    "Korrekthet kan ikke vurderes før testene er gjennomført og vurdert mot fasit."]
+                    "Korrekthet kan ikke vurderes før testene er gjennomført og vurdert mot fasit."], {}
 
     try:
         payload = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, UnicodeError, json.JSONDecodeError):
-        return [], ["Kunne ikke lese testdata (ugyldig JSON eller filtilgang)."]
+        return [], ["Kunne ikke lese testdata (ugyldig JSON eller filtilgang)."], {}
 
     if not isinstance(payload, dict) or not isinstance(payload.get("tester"), list):
-        return [], ["Testdata må være et JSON-objekt med en liste kalt 'tester'."]
+        return [], ["Testdata må være et JSON-objekt med en liste kalt 'tester'."], {}
+
+    metadata = {
+        felt: payload.get(felt) if isinstance(payload.get(felt), str) else None
+        for felt in ("kilde", "testet_dato", "for_versjon", "etter_versjon")
+    }
+    notater = payload.get("konverteringsnotater")
+    metadata["konverteringsnotater"] = [str(n) for n in notater] if isinstance(notater, list) else []
+    oppsummering = payload.get("oppsummering_excel")
+    metadata["oppsummering"] = oppsummering if isinstance(oppsummering, dict) else None
 
     tester = []
     varsler = []
@@ -168,60 +253,143 @@ def _les_testgrunnlag(path: Path) -> tuple[list[dict], list[str]]:
             varsler.append(f"Test {nummer} ble hoppet over: forventet et objekt.")
             continue
 
+        test_id = str(rad.get("id") or f"T{nummer:02d}")
         fase = _standardiser_verdi(rad.get("fase"), {"for", "etter"})
         forventet = _standardiser_verdi(rad.get("forventet_handtering"), set(HANDTERINGER))
-        faktisk = _standardiser_verdi(rad.get("faktisk_handtering"), set(HANDTERINGER))
+        faktisk = _standardiser_verdi(rad.get("faktisk_handtering"), set(TEST_HANDTERINGER))
         sporsmal = rad.get("sporsmal")
-        kategori = _standardiser_kategori(rad.get("kategori"))
 
-        if fase is None or forventet is None or not isinstance(sporsmal, str) or not sporsmal.strip() or kategori not in KATEGORI_NAVN:
-            varsler.append(f"Test {nummer} ble hoppet over: ugyldig fase, kategori, spørsmål eller forventet håndtering.")
+        if fase is None or forventet is None or not isinstance(sporsmal, str) or not sporsmal.strip():
+            varsler.append(f"Test {nummer} ble hoppet over: ugyldig fase, spørsmål eller forventet håndtering.")
             continue
 
-        korrekt = rad.get("svar_korrekt")
-        if not isinstance(korrekt, bool):
-            korrekt = None
-        styrke = _standardiser_verdi(rad.get("kunnskapsstyrke"), {"sterk", "middels", "svak"})
+        # Kategori: beholdes uten gjetning. Ukjent navn -> 'Ukjent' + varsel.
+        kategori = _standardiser_kategori(rad.get("kategori"))
+        if kategori is not None and kategori not in KATEGORI_NAVN and kategori != UKJENT_KATEGORI:
+            varsler.append(f"Test {test_id} ({fase}): ukjent kategori «{kategori}» er vist som «{UKJENT_KATEGORI}».")
+            kategori = UKJENT_KATEGORI
+
+        vurdering, vurdering_kilde, korrekt, vurderingsvarsel = _les_vurdering(rad, test_id)
+        if vurderingsvarsel:
+            varsler.append(vurderingsvarsel)
+
+        styrke = _standardiser_verdi(rad.get("kunnskapsstyrke"), set(KUNNSKAPSSTYRKER))
         confidence = rad.get("confidence_pct")
         if isinstance(confidence, bool) or not isinstance(confidence, (int, float)) or not (0 <= confidence <= 100):
             confidence = None
         else:
             confidence = round(confidence)
 
-        definisjon = KATEGORI_NAVN[kategori]
+        definisjon = KATEGORI_NAVN.get(kategori)
         tester.append({
-            "id": str(rad.get("id") or f"T{nummer:02d}"),
+            "id": test_id,
             "fase": fase,
             "sporsmal": sporsmal.strip(),
             "kategori": kategori,
-            "konsekvens": definisjon["konsekvens"],
+            "kategori_grunnlag": str(rad.get("kategori_grunnlag") or "") or None,
+            "kategori_merknad": str(rad.get("kategori_merknad") or "") or None,
+            # Eksplisitt klassifisering fra testprotokollen, ellers None
+            # («ikke klassifisert»). Aldri avledet fra kategorien.
+            "konsekvens": _les_konsekvens(rad),
+            # Kategoriens nivå, kun som indikasjon (ikke brukt i beregninger).
+            "kategori_konsekvens": definisjon["konsekvens"] if definisjon else None,
             "forventet_handtering": forventet,
             "faktisk_handtering": faktisk,
             "svar_korrekt": korrekt,
+            "manuell_vurdering": {v: k for k, v in MANUELL_VURDERING.items()}.get(vurdering),
+            "vurdering": vurdering or "ikke_vurdert",
+            "vurdering_kilde": vurdering_kilde,
             "kunnskapsstyrke": styrke,
             "confidence_pct": confidence,
+            "beste_treff": str(rad.get("beste_treff") or "") or None,
             "kommentar": str(rad.get("kommentar") or ""),
-            "resultat": _beregn_resultat(forventet, faktisk, korrekt),
+            "resultat": _beregn_resultat(forventet, faktisk, vurdering),
         })
 
+    return tester, varsler, metadata
+
+
+def _les_testgrunnlag(path: Path) -> tuple[list[dict], list[str]]:
+    """Bakoverkompatibel innpakning: (tester, varsler)."""
+    tester, varsler, _ = _les_testdata(path)
     return tester, varsler
 
 
 def _statistikk(tester: list[dict]) -> dict:
-    """Oppsummer kun vurderte spørsmål; ingen fiktive nullresultater."""
-    vurderte = [t for t in tester if t["resultat"] != "ikke_vurdert"]
-    korrekte = [t for t in vurderte if t["resultat"] in ("korrekt_svar", "korrekt_avsta")]
-    risikofylte = [t for t in vurderte if t["konsekvens"] == "hoy" and t["resultat"] in ("feil_svar", "uonsket_svar")]
-    fordelinger = {nivaa: sum(t["kunnskapsstyrke"] == nivaa for t in tester) for nivaa in ("sterk", "middels", "svak")}
+    """Oppsummer testene ut fra den manuelle vurderingen.
+
+    Ingen fiktive nullresultater: tester uten vurdering telles som
+    'ikke_vurdert', og tester uten konsekvensklassifisering tas ikke med i
+    tall som forutsetter kjent konsekvens."""
+    vurderte = [t for t in tester if t["vurdering"] in VURDERINGER]
+    telling = {v: sum(t["vurdering"] == v for t in vurderte) for v in VURDERINGER}
+    handteringer = {h: sum(t["faktisk_handtering"] == h for t in tester) for h in TEST_HANDTERINGER}
+
+    feil = [t for t in vurderte if t["vurdering"] == "feil"]
+    feil_besvart = [t for t in feil if t["faktisk_handtering"] in SVAR_HANDTERINGER]
+    risikofylte = [t for t in feil_besvart if t["konsekvens"] == "hoy"]
+    feil_uten_konsekvens = [t for t in feil_besvart if t["konsekvens"] is None]
+
+    styrker = {nivaa: sum(t["kunnskapsstyrke"] == nivaa for t in tester) for nivaa in KUNNSKAPSSTYRKER}
+    styrker["ikke_vurdert"] = sum(t["kunnskapsstyrke"] is None for t in tester)
+
     return {
         "antall": len(tester),
         "vurderte": len(vurderte),
-        "korrekte": len(korrekte),
-        "feil": len(vurderte) - len(korrekte),
-        "andel_korrekt": round(100 * len(korrekte) / len(vurderte)) if vurderte else None,
+        "ikke_vurdert": len(tester) - len(vurderte),
+        **telling,
+        "andel_riktig_pct": round(100 * telling["riktig"] / len(vurderte), 1) if vurderte else None,
+        # Bakoverkompatible navn (korrekte = riktig).
+        "korrekte": telling["riktig"],
+        "andel_korrekt": round(100 * telling["riktig"] / len(vurderte)) if vurderte else None,
+        "handtering": handteringer,
+        "henvis": handteringer["henvis"],
+        "usikker": handteringer["usikker"],
+        # Avstått selv om svaret finnes (historisk 'usikker' er ikke avstått).
+        "feil_avsta": sum(t["forventet_handtering"] in SVAR_HANDTERINGER and t["faktisk_handtering"] == "avsta"
+                          for t in tester),
+        # Svart (feil) der chatboten skulle avstått: kunnskapsbasen har ikke svaret.
+        "feilsvar_uten_kilde": sum(t["forventet_handtering"] == "avsta" for t in feil_besvart),
+        # Svart (feil) der svaret finnes, men feil kilde/avsnitt ble brukt.
+        "feil_kilde": sum(t["forventet_handtering"] in SVAR_HANDTERINGER for t in feil_besvart),
+        "konsekvens": {
+            "hoy": sum(t["konsekvens"] == "hoy" for t in tester),
+            "lav": sum(t["konsekvens"] == "lav" for t in tester),
+            "ikke_klassifisert": sum(t["konsekvens"] is None for t in tester),
+        },
+        # Kun feil med kjent høy konsekvens. Feil uten klassifisering telles
+        # separat og regnes verken som høy eller lav risiko.
         "risikofylte_feil": len(risikofylte),
-        "kunnskapsstyrke": fordelinger,
+        "feil_uten_konsekvens": len(feil_uten_konsekvens),
+        "kunnskapsstyrke": styrker,
+        "kunnskapsstyrke_vurdert": any(styrker[n] for n in KUNNSKAPSSTYRKER),
     }
+
+
+def _kontroller_oppsummering(oppsummering: dict | None, statistikk: dict) -> dict | None:
+    """Sammenlign B sin oppgitte oppsummering med tallene beregnet fra radene.
+
+    Avvik rapporteres; vurderingene endres aldri."""
+    if not isinstance(oppsummering, dict):
+        return None
+    kontroll = {}
+    for fase, beregnet in statistikk.items():
+        oppgitt = oppsummering.get(fase)
+        if not isinstance(oppgitt, dict):
+            continue
+        felter = []
+        for felt in KONTROLLFELT:
+            if felt not in oppgitt:
+                continue
+            verdi = oppgitt[felt]
+            faktisk = beregnet.get(felt)
+            if isinstance(verdi, (int, float)) and isinstance(faktisk, (int, float)):
+                samsvar = abs(verdi - faktisk) < 0.05 if felt.endswith("_pct") else verdi == faktisk
+            else:
+                samsvar = verdi == faktisk
+            felter.append({"felt": felt, "oppgitt": verdi, "beregnet": faktisk, "samsvar": samsvar})
+        kontroll[fase] = {"samsvar": all(f["samsvar"] for f in felter), "felter": felter}
+    return kontroll
 
 
 # ---------------------------------------------------------------------------
@@ -334,20 +502,40 @@ def bygg_risikodata(
     svarlogg_path: Path = SVARLOGG_PATH,
 ) -> dict:
     """Bygg et JSON-serialiserbart dashboard uten å kalle chatboten."""
-    tester, varsler = _les_testgrunnlag(Path(testdata_path))
+    tester, varsler, metadata = _les_testdata(Path(testdata_path))
     loggrader, loggvarsler = _les_svarlogg(Path(svarlogg_path))
     alle_filer = list(Path(knowledge_dir).glob("*.txt")) if Path(knowledge_dir).is_dir() else []
 
+    def per_fase(rader: list[dict]) -> dict:
+        return {fase: _statistikk([t for t in rader if t["fase"] == fase]) for fase in ("for", "etter")}
+
     kategorier = []
     for kategori in KATEGORIER:
-        navn = kategori["navn"]
-        relaterte = [t for t in tester if t["kategori"] == navn]
+        relaterte = [t for t in tester if t["kategori"] == kategori["navn"]]
         kategorier.append({
             **kategori,
             "kilde_finnes": (Path(knowledge_dir) / kategori["dokument"]).is_file(),
-            "for": _statistikk([t for t in relaterte if t["fase"] == "for"]),
-            "etter": _statistikk([t for t in relaterte if t["fase"] == "etter"]),
+            **per_fase(relaterte),
         })
+    # Tester med ukjent eller manglende kategori vises for seg, uten
+    # oppdiktet dokument eller konsekvens.
+    for navn, filter_ in ((UKJENT_KATEGORI, UKJENT_KATEGORI), ("Ikke oppgitt", None)):
+        relaterte = [t for t in tester if t["kategori"] == filter_]
+        if relaterte:
+            kategorier.append({
+                "id": "ukjent" if filter_ else "ikke_oppgitt", "navn": navn,
+                "konsekvens": None, "dokument": None, "kilde_finnes": False,
+                **per_fase(relaterte),
+            })
+
+    statistikk = per_fase(tester)
+    kontroll = _kontroller_oppsummering(metadata.get("oppsummering"), statistikk)
+    if kontroll:
+        for fase, resultat in kontroll.items():
+            avvik = [f for f in resultat["felter"] if not f["samsvar"]]
+            if avvik:
+                detaljer = ", ".join(f"{f['felt']}: oppgitt {f['oppgitt']}, beregnet {f['beregnet']}" for f in avvik)
+                varsler.append(f"Avvik mot oppsummeringen i testprotokollen ({'før' if fase == 'for' else 'etter'}): {detaljer}.")
 
     return {
         "tittel": "Risikoanalyse av onboarding-assistent",
@@ -355,10 +543,26 @@ def bygg_risikodata(
         "forelopig_risikoklassifisering": True,
         "kunnskapskilder": len(alle_filer),
         "kategorier": kategorier,
-        "statistikk": {
-            "for": _statistikk([t for t in tester if t["fase"] == "for"]),
-            "etter": _statistikk([t for t in tester if t["fase"] == "etter"]),
+        # Manuelle testresultater og faktisk bruk er to adskilte datakilder.
+        "datakilder": {
+            "manuelle_tester": {
+                "type": "Manuell testprotokoll (vurdert mot fasit)",
+                "fil": "data/risiko_tester.json",
+                "kilde": metadata.get("kilde"),
+                "testet_dato": metadata.get("testet_dato"),
+                "for_versjon": metadata.get("for_versjon"),
+                "etter_versjon": metadata.get("etter_versjon"),
+                "antall_rader": len(tester),
+                "konverteringsnotater": metadata.get("konverteringsnotater", []),
+            },
+            "svarlogg": {
+                "type": "Faktisk bruk av chatboten (kun håndtering, ikke riktighet)",
+                "fil": "logs/svarlogg.jsonl",
+                "antall_rader": len(loggrader),
+            },
         },
+        "statistikk": statistikk,
+        "kontroll": kontroll,
         "tester": tester,
         "varsler": varsler,
         "svarlogg": {

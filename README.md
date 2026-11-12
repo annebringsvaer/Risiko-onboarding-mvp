@@ -190,8 +190,19 @@ Det har to datakilder:
    HR-henvisning» er et oppfølgingspunkt som bør undersøkes, ikke et automatisk regelbrudd.
 2. **Manuelle testresultater** (`data/risiko_tester.json`, valgfri) viser om svarene var
    *riktige*, vurdert mot fasit. `henvis` regnes som et svar, men aldri automatisk som
-   korrekt. Korrekthet krever manuell `svar_korrekt`. Mangler filen, viser dashboardet
-   at testdata ikke er lagt inn, og ingen resultater fylles inn.
+   korrekt. Mangler filen, viser dashboardet at testdata ikke er lagt inn, og ingen
+   resultater fylles inn. Filen inneholder testprotokollen fra testingen av v1.0-frys
+   (27 spørsmål, før og etter forbedringene):
+   - `manuell_vurdering` (`ja`/`delvis`/`nei`) er autoritativ. `svar_korrekt` brukes
+     bare når den mangler.
+   - `usikker` er et historisk utfall fra før-versjonen. Det telles for seg og regnes
+     ikke som avståelse.
+   - Konsekvens hentes bare fra `konsekvens_excel`. Mangler den, vises
+     «Ikke klassifisert», og testen tas ikke med i tall som krever kjent konsekvens.
+     Kategori `Ukjent` eller manglende kategori beholdes uten gjetning.
+   - Kunnskapsstyrke uten data vises som «Ikke vurdert».
+   - `oppsummering_excel` kontrolleres mot tallene beregnet fra radene, og avvik
+     rapporteres i dashboardet uten at vurderingene endres.
 
 Loggdata sier altså noe om *håndtering*, ikke om *riktighet*. Confidence (BM25) er
 heller ikke en sannsynlighet for at svaret er riktig.

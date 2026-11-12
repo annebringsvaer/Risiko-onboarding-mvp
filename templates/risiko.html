@@ -71,6 +71,9 @@
     .risk-state.ok { color: #146745; background: #e4f5eb; }
     .risk-state.bad { color: #a63c2c; background: #feeeeb; }
     .risk-state.unknown { color: #5e6677; background: #f1f3f7; }
+    .risk-state.partial { color: #7a5a12; background: #fdf3dc; }
+    .risk-source { display: flex; gap: 10px; flex-wrap: wrap; align-items: baseline; font-size: 12px; color: #475467; margin: 0 0 14px; }
+    .risk-source strong { color: #1c2333; font-size: 12.5px; }
     .risk-empty { padding: 24px; text-align: center; font-size: 12px; color: #667085; line-height: 1.7; }
     .risk-method-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 15px; }
     .risk-method { border-left: 3px solid #dfe5fd; padding: 1px 8px 1px 12px; }
@@ -118,6 +121,11 @@
 
     <div class="risk-notice" id="risk-notice" role="status" hidden></div>
 
+    <div class="risk-source" id="risk-source">
+      <strong>Manuelle testresultater</strong>
+      <span id="risk-source-detail">Ingen testprotokoll lastet inn.</span>
+    </div>
+
     <section class="risk-kpis" aria-label="Nøkkeltall">
       <div class="risk-card risk-kpi">
         <div class="risk-kpi-label">Dokumenter i kunnskapsbasen</div>
@@ -130,14 +138,60 @@
         <div class="risk-kpi-note" id="kpi-assessed-note">Ingen testresultater ennå</div>
       </div>
       <div class="risk-card risk-kpi">
-        <div class="risk-kpi-label">Korrekt håndtering i test</div>
+        <div class="risk-kpi-label">Riktig håndtert i test</div>
         <div class="risk-kpi-number" id="kpi-success">—</div>
-        <div class="risk-kpi-note">Manuelt vurdert mot forventet håndtering</div>
+        <div class="risk-kpi-note" id="kpi-success-note">Manuell vurdering (Ja / Delvis / Nei)</div>
       </div>
       <div class="risk-card risk-kpi">
         <div class="risk-kpi-label">Risikofylte feil</div>
         <div class="risk-kpi-number" id="kpi-errors">—</div>
-        <div class="risk-kpi-note">Feilaktige svar i høykonsekvens-kategorier</div>
+        <div class="risk-kpi-note" id="kpi-errors-note">Feilaktige svar med klassifisert høy konsekvens</div>
+      </div>
+    </section>
+
+    <section class="risk-kpis" aria-label="Håndtering i testen">
+      <div class="risk-card risk-kpi">
+        <div class="risk-kpi-label">Svar + henvisning til HR</div>
+        <div class="risk-kpi-number" id="kpi-henvis">—</div>
+        <div class="risk-kpi-note">Regnes som svar, ikke avståelse</div>
+      </div>
+      <div class="risk-card risk-kpi">
+        <div class="risk-kpi-label">Feilaktige avståelser</div>
+        <div class="risk-kpi-number" id="kpi-feil-avsta">—</div>
+        <div class="risk-kpi-note">Avstod selv om svaret finnes i kunnskapsbasen</div>
+      </div>
+      <div class="risk-card risk-kpi">
+        <div class="risk-kpi-label">Usikker (historisk)</div>
+        <div class="risk-kpi-number" id="kpi-usikker">—</div>
+        <div class="risk-kpi-note">Utfall fra før-versjonen; ikke tolket som avståelse</div>
+      </div>
+      <div class="risk-card risk-kpi">
+        <div class="risk-kpi-label">Konsekvens ikke klassifisert</div>
+        <div class="risk-kpi-number" id="kpi-uklassifisert">—</div>
+        <div class="risk-kpi-note">Tester uten oppgitt høy/lav konsekvens</div>
+      </div>
+    </section>
+
+    <section class="risk-card risk-panel risk-wide" aria-labelledby="risk-control-title">
+      <div class="risk-section-head">
+        <div>
+          <h2 id="risk-control-title">Kontroll mot testprotokollens oppsummering</h2>
+          <p>Tallene beregnet fra enkeltradene sammenlignes med oppsummeringen i testprotokollen. Avvik rapporteres. Vurderingene endres ikke.</p>
+        </div>
+        <span class="risk-mini-tag" id="risk-control-status">Ingen oppsummering</span>
+      </div>
+      <div class="risk-table-scroll">
+        <table class="risk-table">
+          <thead>
+            <tr>
+              <th scope="col">Felt</th>
+              <th scope="col">Oppgitt</th>
+              <th scope="col">Beregnet</th>
+              <th scope="col">Samsvar</th>
+            </tr>
+          </thead>
+          <tbody id="risk-control-rows"></tbody>
+        </table>
       </div>
     </section>
 
@@ -226,8 +280,8 @@
     <section class="risk-card risk-panel risk-wide" aria-labelledby="risk-tests-title">
       <div class="risk-section-head">
         <div>
-          <h2 id="risk-tests-title">Testprotokoll</h2>
-          <p>Viser forventet håndtering, faktisk håndtering og manuelt vurdert kunnskapsstyrke.</p>
+          <h2 id="risk-tests-title">Testprotokoll (manuelle testresultater)</h2>
+          <p>Viser forventet og faktisk håndtering, den manuelle vurderingen (Ja / Delvis / Nei), konsekvens og kunnskapsstyrke. Kategori markert med * er tolket fra beste treff.</p>
         </div>
         <span class="risk-mini-tag" id="risk-test-count">0 testspørsmål</span>
       </div>
@@ -240,7 +294,9 @@
               <th scope="col">Kategori</th>
               <th scope="col">Forventet</th>
               <th scope="col">Faktisk</th>
-              <th scope="col">Resultat</th>
+              <th scope="col">Manuell vurdering</th>
+              <th scope="col">Utfall</th>
+              <th scope="col">Konsekvens</th>
               <th scope="col">Kunnskapsstyrke</th>
               <th scope="col">Merknad</th>
             </tr>
@@ -268,7 +324,7 @@
         </div>
         <div class="risk-method">
           <strong>Konsekvens ved feil</strong>
-          <p>HMS og rettigheter er foreløpig klassifisert som høy konsekvens. Dette er uavhengig av om søkeindikatoren er høy eller lav.</p>
+          <p>HMS og rettigheter er foreløpig klassifisert som høy konsekvens. Dette er uavhengig av om søkeindikatoren er høy eller lav. I testresultatene brukes bare konsekvensen som er oppgitt i testprotokollen; mangler den, vises «Ikke klassifisert», og testen regnes verken som høy eller lav risiko.</p>
         </div>
       </div>
     </section>
