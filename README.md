@@ -11,6 +11,7 @@ ML-avhengigheter.
 - [Arkitektur](#arkitektur)
 - [Kom i gang lokalt](#kom-i-gang-lokalt)
 - [Bruk](#bruk)
+- [Demo](#demo)
 - [Confidence-score og usikkerhetsvarsel](#confidence-score-og-usikkerhetsvarsel)
 - [Loggføring av usikre spørsmål](#loggføring-av-usikre-spørsmål)
 - [Prosjektstruktur](#prosjektstruktur)
@@ -131,6 +132,11 @@ Eksempler å prøve:
 - «Kan jeg jobbe hjemmefra?» → svar fra «VPN og fjernarbeid»
 - «Kan jeg ta med hunden min på kontoret?» → avstår: treffet («Utstyr») handler ikke om «hunden»
 - Noe helt urelatert, f.eks. «Hvor mye koster aksjen deres?» → skal gi usikkerhetsvarsel
+
+## Demo
+Nedenfor vises en kort demonstrasjon av hvordan applikasjonen fungerer:
+
+https://github.com/user-attachments/assets/de3e497d-8fd8-41f0-832b-6e78efc89520
 
 ## Confidence-score og usikkerhetsvarsel
 
